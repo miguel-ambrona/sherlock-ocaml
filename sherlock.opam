@@ -1,0 +1,18 @@
+opam-version: "2.0"
+version: "0.0.1"
+synopsis: "A chess library for retrograde analysis"
+authors:    [ "Miguel Ambrona" ]
+maintainer: [ "mac.ambrona@gmail.com" ]
+homepage: "https://gitlab.com/ambrona/sherlock"
+dev-repo: "git+https://gitlab.com:ambrona/sherlock.git"
+bug-reports: "https://gitlab.com/ambrona/sherlock/-/issues"
+license: "MIT"
+depends: [
+  "ocaml" {>= "4.13"}
+  "dune" {>= "2.8.4"}
+  "alcotest" {>= "1.1.0" }
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+  ["dune" "test" "-p" name "-j" jobs] {with-test}
+]

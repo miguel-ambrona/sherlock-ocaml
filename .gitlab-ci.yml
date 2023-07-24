@@ -1,0 +1,81 @@
+.common: &common
+  image: debian:bookworm-slim
+  variables:
+    FF_USE_FASTZIP: "true"
+    # A workaround against a bug in gitlab-runner's default
+    # unzipping implementation, which partially breaks caching for the dune _build cache.
+    # See https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27496 for more details.
+  # We use a local opam switch in `./_opam` that is cached
+  # by Gitlab, and reused across all branches and pull requests.
+  cache:
+    key:
+      files:
+        - .build_system_hash
+    paths:
+      - _opam
+      - _build
+      - srs
+  # rules:
+  #   - when: always
+
+stages:
+  - deps
+  - test
+  - release
+  # - coverage
+
+deps:
+  <<: *common
+  stage: deps
+  script:
+    # in order to clean the cache you can:
+    # - run a manual pipeline with the variable CLEAN_CACHE set to "true"
+    # - or include "opam" in your branch name
+    # or if you have privileges click "Clear runner caches" under pipelines
+    - apt-get update
+    - apt-get install -y --no-install-recommends opam git ca-certificates curl rsync
+    - opam init -y --bare --disable-sandboxing
+    - ./scripts/install_build_deps.sh
+
+test:
+  <<: *common
+  stage: test
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends opam git ca-certificates curl z3
+    - opam init -y --bare --disable-sandboxing
+    - eval $(opam env)
+    - OPAMCONFIRMLEVEL=unsafe-yes opam install . --depext-only
+    - dune build
+    - ./scripts/check_opam_files.sh
+    - dune build @fmt
+    - export OCAMLRUNPARAM=b
+    - if [[ "$SLOW_TESTS" != "true" ]]; then echo "runtest"; dune build @runtest; fi
+    - if [[ "$SLOW_TESTS" == "true" ]]; then echo "runtest_slow"; SRS_DIR="$PWD/srs" dune build @runtest_slow; fi
+    - if [[ "$SLOW_TESTS" == "true" ]]; then echo "runtest_slow_with_regressions"; SRS_DIR="$PWD/srs" dune build @runtest_slow_with_regressions; fi
+
+opam:
+  <<: *common
+  stage: release
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends opam git ca-certificates curl z3 rsync
+    - opam init -y --bare --disable-sandboxing
+    - ./scripts/opam-test-all.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+
+# # Coverage and publish to coveralls
+# coveralls:
+#   <<: *common
+#   stage: test
+#   script:
+#     - eval $(opam env)
+#     - apt-get update
+#     - apt-get install jq -y
+#     - opam depext conf-gmp conf-pkg-config conf-libffi
+#     - dune runtest --instrument-with bisect_ppx --force
+#     - bisect-ppx-report coveralls coverage-raw.json --coverage-path _build/default/
+#     - ./_ci/coverage_metadata_glci.sh coverage-raw.json > coverage_glci.json
+#     - curl --location --request POST 'https://coveralls.io/api/v1/jobs' --form 'json_file=@coverage_glci.json'
+#   allow_failure: true
