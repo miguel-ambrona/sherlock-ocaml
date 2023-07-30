@@ -1,4 +1,4 @@
 (library
  (public_name sherlock)
  (name chess)
- (modules chess color))
+ (modules chess color board))
