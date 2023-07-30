@@ -133,20 +133,30 @@ module Rules = struct
   let material_rule state =
     let board = Position.board state.pos in
     let count ?square_color p = Board.count ?square_color p board in
+    let in_board =
+      List.for_all (fun (p_opt, s) -> Board.piece_at s board = p_opt)
+    in
     let open Piece in
+    let open Square in
     let nb_wPs = count wP in
     let nb_bPs = count bP in
+    let wP = Some Piece.wP in
+    let bP = Some Piece.bP in
+    let wBc1 = if in_board [ (wP, b2); (wP, d2); (None, c1) ] then 0 else 1 in
+    let wBf1 = if in_board [ (wP, e2); (wP, g2); (None, f1) ] then 0 else 1 in
+    let bBc8 = if in_board [ (bP, b7); (bP, d7); (None, c8) ] then 0 else 1 in
+    let bBf8 = if in_board [ (bP, e7); (bP, g7); (None, f8) ] then 0 else 1 in
     let lbound_promoted_white =
       max 0 (count wN - 2)
-      + max 0 (count wB ~square_color:Color.white - 1)
-      + max 0 (count wB ~square_color:Color.black - 1)
+      + max 0 (count wB ~square_color:Color.white - wBf1)
+      + max 0 (count wB ~square_color:Color.black - wBc1)
       + max 0 (count wR - 2)
       + max 0 (count wQ - 1)
     in
     let lbound_promoted_black =
       max 0 (count bN - 2)
-      + max 0 (count bB ~square_color:Color.white - 1)
-      + max 0 (count bB ~square_color:Color.black - 1)
+      + max 0 (count bB ~square_color:Color.white - bBc8)
+      + max 0 (count bB ~square_color:Color.black - bBf8)
       + max 0 (count bR - 2)
       + max 0 (count bQ - 1)
     in

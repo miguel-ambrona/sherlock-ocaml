@@ -59,8 +59,7 @@ module Internal = struct
         ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", false);
         ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", true);
         ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", true);
-        (* The logic does not realize (yet) that wBc1 cannot be the one on a3 *)
-        ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", false);
+        ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", true);
         ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", true);
         ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", false);
       ]
