@@ -22,6 +22,49 @@
 (*                                                                           *)
 (*****************************************************************************)
 
-module Color = Color
-module Board = Board
-module Position = Position
+open Chess
+
+module Test_Position = struct
+  open Position
+
+  let test_initial () =
+    assert (
+      equal initial
+      @@ of_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+
+  let test_parsing () =
+    let check (fen, expected) = assert (expected = to_fen (of_fen fen)) in
+    List.iter check
+      [
+        (* Normal parsing *)
+        ( "r1b1kb1r/6pp/p1pppn2/4P1B1/8/q1N5/P1PQ2PP/1R2KB1R b Kkq - 0 13",
+          "r1b1kb1r/6pp/p1pppn2/4P1B1/8/q1N5/P1PQ2PP/1R2KB1R b Kkq - 0 13" );
+        (* En passant rights *)
+        ( "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+          "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" );
+        ( "rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3",
+          "rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3" );
+        ( "rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq e4 0 3",
+          "rnbqkbnr/ppp2ppp/4p3/3pP3/3P4/8/PPP2PPP/RNBQKBNR b KQkq - 0 3" );
+        (* Castling rights *)
+        ( "r3k1r1/8/8/8/8/8/8/1R2K2R w KQkq - 0 1",
+          "r3k1r1/8/8/8/8/8/8/1R2K2R w Kq - 0 1" );
+        ( "r2k3r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+          "r2k3r/8/8/8/8/8/8/R3K2R w KQ - 0 1" );
+        (* Halfmove counter *)
+        ("8/8/8/8/8/8/8/8 w - - ? 1", "8/8/8/8/8/8/8/8 w - - ? 1");
+        ("8/8/8/8/8/8/8/8 w - - -5 1", "8/8/8/8/8/8/8/8 w - - ? 1");
+      ]
+
+  let tests =
+    Alcotest.
+      ( "Position",
+        [
+          test_case "initial" `Quick test_initial;
+          test_case "parsing" `Quick test_parsing;
+        ] )
+end
+
+let () =
+  let open Alcotest in
+  run "Position" [ Test_Position.tests ]

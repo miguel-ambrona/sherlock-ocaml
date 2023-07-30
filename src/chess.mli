@@ -303,3 +303,32 @@ module Board : sig
       in [board], considering only those over squares of color [square_color]
       if such optional argument is specified. *)
 end
+
+(** Position structure and operations. A position consists of a board together
+    with auxiliary information to store the turn, castling/en-passant rights,
+    the halfmove clock and the fullmove number. *)
+module Position : sig
+  type t
+  (** The type of positions. *)
+
+  val initial : t
+  (** The initial position of a chess game. *)
+
+  val equal : t -> t -> bool
+  (** [equal pos1 pos2] returns [true] iff positions [pos1] and [pos2] are
+      the same. *)
+
+  val of_fen : string -> t
+  (** Convert a string into a position by parsing it in
+      Forsyth-Edwards Notation.
+      @raise Invalid_argument if the given FEN is invalid. *)
+
+  val to_fen : t -> string
+  (** Convert a position into a FEN string. *)
+
+  val board : t -> Board.t
+  (** Return the board of the given position. *)
+
+  val pieces : t -> (Board.Piece.t * Board.Square.t) list
+  (** Return the list of pieces and their locations on the given position. *)
+end
