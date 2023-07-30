@@ -176,6 +176,26 @@ module Direction = struct
     |> List.filter_map Fun.id
 end
 
+module Bitboard = struct
+  type t = Int64.t
+
+  let empty = 0L
+  let add s bb = Int64.(logor bb @@ shift_left 1L s)
+  let get s bb = Int64.(logand bb (shift_left 1L s) <> 0L)
+
+  let to_string bb =
+    List.init 8 (fun row ->
+        List.init 8 (fun col ->
+            let s = col + ((7 - row) * 8) in
+            if get s bb then "x"
+            else if Color.is_black (Square.color s) then "."
+            else "_")
+        |> String.concat " ")
+    |> String.concat "\n"
+
+  let print_bb bb = Format.printf "%s\n" @@ to_string bb
+end
+
 module SquareMap = Map.Make (Square)
 
 (* A board is implemented as a map from squares to pieces *)
