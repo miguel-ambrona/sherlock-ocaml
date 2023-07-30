@@ -332,3 +332,7 @@ module Position : sig
   val pieces : t -> (Board.Piece.t * Board.Square.t) list
   (** Return the list of pieces and their locations on the given position. *)
 end
+
+module Legality : sig
+  val is_legal : Position.t -> bool
+end
