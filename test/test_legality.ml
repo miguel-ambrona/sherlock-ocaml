@@ -49,7 +49,27 @@ module Internal = struct
         ("4k3/8/8/8/8/8/1P1P4/2B1K3 w K - 0 1", [ c1; b2; d2 ], [ e1 ]);
       ]
 
-  let tests = Alcotest.[ test_case "static_rule" `Quick test_static_rule ]
+  let test_material_rule () =
+    List.iter
+      (fun (fen, invalid) ->
+        let state = Rules.apply (empty_state fen) Rules.material_rule in
+        Helpers.print_events state.events;
+        assert (invalid = EventSet.mem Event.Contradiction state.events))
+      [
+        ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", false);
+        ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", true);
+        ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", true);
+        ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", true);
+        ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", true);
+        ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", false);
+      ]
+
+  let tests =
+    Alcotest.
+      [
+        test_case "static_rule" `Quick test_static_rule;
+        test_case "material_rule" `Quick test_material_rule;
+      ]
 end
 
 let () =
