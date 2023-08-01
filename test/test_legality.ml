@@ -32,7 +32,7 @@ module Internal = struct
   let test_static_rule () =
     List.iter
       (fun (fen, expected_static, expected_non_static) ->
-        let state = Rules.apply (empty_state fen) Rules.static_rule in
+        let state = Rules.apply (empty_state fen) Rules.[ static_rule ] in
         let static s = EventSet.mem (Event.Static s) state.events in
         assert (List.for_all static expected_static);
         assert (List.for_all (Fun.negate static) expected_non_static))
@@ -52,7 +52,7 @@ module Internal = struct
   let test_material_rule () =
     List.iter
       (fun (fen, invalid) ->
-        let state = Rules.apply (empty_state fen) Rules.material_rule in
+        let state = Rules.apply (empty_state fen) Rules.[ material_rule ] in
         Helpers.print_events state.events;
         assert (invalid = EventSet.mem Event.Contradiction state.events))
       [

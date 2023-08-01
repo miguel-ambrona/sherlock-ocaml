@@ -122,13 +122,16 @@ module Rules = struct
       |> EventSet.of_list
     in
     (* Static pieces due to restricted movements *)
-    List.fold_left
-      (fun events (p, s) ->
-        if List.for_all (is_static events) (Helpers.predecessors p s) then
-          EventSet.add (Event.Static s) events
-        else events)
-      (EventSet.union state.events static_events)
-      (Position.pieces state.pos)
+    let new_events =
+      List.fold_left
+        (fun events (p, s) ->
+          if List.for_all (is_static events) (Helpers.predecessors p s) then
+            EventSet.add (Event.Static s) events
+          else events)
+        (EventSet.union state.events static_events)
+        (Position.pieces state.pos)
+    in
+    { state with events = new_events }
 
   let material_rule state =
     let board = Position.board state.pos in
@@ -166,17 +169,20 @@ module Rules = struct
       || nb_wPs > 8 || nb_bPs > 8
       || 8 - nb_wPs < lbound_promoted_white
       || 8 - nb_bPs < lbound_promoted_black
-    then EventSet.singleton Contradiction
-    else EventSet.empty
+    then { state with events = EventSet.add Contradiction state.events }
+    else state
 
-  let rec apply state rule =
-    let events = rule state in
-    if EventSet.subset events state.events then state
-    else apply { state with events = EventSet.union state.events events } rule
+  let rec apply state rules =
+    let rec aux state = function
+      | [] -> state
+      | rule :: rules -> aux (rule state) rules
+    in
+    let new_state = aux state rules in
+    if EventSet.equal state.events new_state.events then state
+    else apply new_state rules
 end
 
 let is_legal pos =
-  let rules = Rules.[ static_rule; material_rule ] in
   let init_state = Rules.{ pos; events = EventSet.empty } in
-  let state = List.fold_left Rules.apply init_state rules in
+  let state = Rules.apply init_state Rules.[ static_rule; material_rule ] in
   not (EventSet.mem Contradiction state.events)
