@@ -28,7 +28,7 @@ module Internal = struct
 
   type legality = Legal | Illegal
 
-  let legality_assertion (state : Rules.state) = function
+  let legality_assertion (state : State.t) = function
     | Legal -> assert (not state.illegal)
     | Illegal -> assert state.illegal
 
@@ -37,7 +37,7 @@ module Internal = struct
       List.iter
         (fun (fen, expected_static, expected_non_static) ->
           let pos = Position.of_fen fen in
-          let state = Rules.(apply (init_state pos) [ static_rule ]) in
+          let state = Rules.(apply (State.init pos) [ static_rule ]) in
           let is_static s = SquareSet.mem s state.static in
           assert (List.for_all is_static expected_static);
           assert (List.for_all (Fun.negate is_static) expected_non_static))
@@ -58,7 +58,7 @@ module Internal = struct
       List.iter
         (fun (fen, legality) ->
           let pos = Position.of_fen fen in
-          let state = Rules.(apply (init_state pos) [ material_rule ]) in
+          let state = Rules.(apply (State.init pos) [ material_rule ]) in
           legality_assertion state legality)
         [
           ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Legal);

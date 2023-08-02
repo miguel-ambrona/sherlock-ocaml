@@ -26,6 +26,7 @@ module Piece = Board.Piece
 module Square = Board.Square
 module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
+module SquareMap = Map.Make (Square)
 
 module Helpers = struct
   let bishop_directions =
@@ -59,10 +60,31 @@ module Helpers = struct
           List.filter_map (fun dir -> dir s) dirs
 end
 
-module Rules = struct
-  type state = { pos : Position.t; static : SquareSet.t; illegal : bool }
+module State = struct
+  type t = {
+    pos : Position.t;
+    static : SquareSet.t;
+    origins : SquareSet.t SquareMap.t;
+    illegal : bool;
+  }
 
-  let init_state pos = { pos; static = SquareSet.empty; illegal = false }
+  let init pos =
+    {
+      pos;
+      static = SquareSet.empty;
+      origins = SquareMap.empty;
+      illegal = false;
+    }
+
+  let equal s1 s2 =
+    Position.equal s1.pos s2.pos
+    && SquareSet.equal s1.static s2.static
+    && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && Bool.equal s1.illegal s2.illegal
+end
+
+module Rules = struct
+  open State
 
   let static_rule state =
     let open Square in
@@ -150,9 +172,9 @@ module Rules = struct
       | rule :: rules -> aux (rule state) rules
     in
     let new_state = aux state rules in
-    if state = new_state then state else apply new_state rules
+    if State.equal state new_state then state else apply new_state rules
 end
 
 let is_legal pos =
-  let state = Rules.(apply (init_state pos) [ static_rule; material_rule ]) in
+  let state = Rules.(apply (State.init pos) [ static_rule; material_rule ]) in
   not state.illegal
