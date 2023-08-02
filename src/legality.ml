@@ -27,34 +27,7 @@ module Square = Board.Square
 module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
 
-module Event = struct
-  type t = Static of Square.t | Contradiction
-
-  let to_string = function
-    | Static s -> Format.sprintf "Static %s" @@ Square.to_string s
-    | Contradiction -> "Contradiction"
-
-  let compare = compare
-end
-
-module EventSet = Set.Make (Event)
-
 module Helpers = struct
-  let print_events events =
-    let static_bb =
-      EventSet.fold
-        (fun e bb ->
-          match e with Event.Static s -> Board.Bitboard.add s bb | _ -> bb)
-        events Board.Bitboard.empty
-    in
-    Format.printf "Static:\n";
-    Board.Bitboard.print_bb static_bb;
-    Format.printf "%s\n" @@ String.concat ",\n"
-    @@ List.map Event.to_string
-         (List.filter
-            (function Event.Static _ -> false | _ -> true)
-            (EventSet.elements events))
-
   let bishop_directions =
     Direction.[ north_east; north_west; south_east; south_west ]
 
@@ -87,7 +60,9 @@ module Helpers = struct
 end
 
 module Rules = struct
-  type state = { pos : Position.t; events : EventSet.t }
+  type state = { pos : Position.t; static : SquareSet.t; illegal : bool }
+
+  let init_state pos = { pos; static = SquareSet.empty; illegal = false }
 
   let static_rule state =
     let open Square in
@@ -104,34 +79,31 @@ module Rules = struct
         ]
       |> List.concat
     in
-    let is_static events s = EventSet.mem (Event.Static s) events in
+    let is_static ~state s = SquareSet.mem s state.static in
     (* Static marriage: king and queen are static if they are sourounded
        by static pieces, even without castling rights enabled *)
     let marriage_static =
       List.concat_map
         (fun (border, marriage) ->
-          if List.for_all (is_static state.events) border then marriage else [])
+          if List.for_all (is_static ~state) border then marriage else [])
         [
           ([ c1; c2; d2; e2; f2; f1 ], [ d1; e1 ]);
           ([ c8; c7; d7; e7; f7; f8 ], [ d8; e8 ]);
         ]
     in
-    let static_events =
+    let static =
       castling_static @ marriage_static
-      |> List.map (fun s -> Event.Static s)
-      |> EventSet.of_list
+      |> SquareSet.of_list
+      |> SquareSet.union state.static
     in
     (* Static pieces due to restricted movements *)
-    let new_events =
-      List.fold_left
-        (fun events (p, s) ->
-          if List.for_all (is_static events) (Helpers.predecessors p s) then
-            EventSet.add (Event.Static s) events
-          else events)
-        (EventSet.union state.events static_events)
-        (Position.pieces state.pos)
-    in
-    { state with events = new_events }
+    List.fold_left
+      (fun state (p, s) ->
+        if List.for_all (is_static ~state) (Helpers.predecessors p s) then
+          { state with static = SquareSet.add s state.static }
+        else state)
+      { state with static }
+      (Position.pieces state.pos)
 
   let material_rule state =
     let board = Position.board state.pos in
@@ -169,7 +141,7 @@ module Rules = struct
       || nb_wPs > 8 || nb_bPs > 8
       || 8 - nb_wPs < lbound_promoted_white
       || 8 - nb_bPs < lbound_promoted_black
-    then { state with events = EventSet.add Contradiction state.events }
+    then { state with illegal = true }
     else state
 
   let rec apply state rules =
@@ -178,11 +150,9 @@ module Rules = struct
       | rule :: rules -> aux (rule state) rules
     in
     let new_state = aux state rules in
-    if EventSet.equal state.events new_state.events then state
-    else apply new_state rules
+    if state = new_state then state else apply new_state rules
 end
 
 let is_legal pos =
-  let init_state = Rules.{ pos; events = EventSet.empty } in
-  let state = Rules.apply init_state Rules.[ static_rule; material_rule ] in
-  not (EventSet.mem Contradiction state.events)
+  let state = Rules.(apply (init_state pos) [ static_rule; material_rule ]) in
+  not state.illegal

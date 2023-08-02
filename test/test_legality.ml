@@ -28,21 +28,19 @@ module Internal = struct
 
   type legality = Legal | Illegal
 
-  let legality_assertion found_contradiction = function
-    | Legal -> assert (not found_contradiction)
-    | Illegal -> assert found_contradiction
+  let legality_assertion (state : Rules.state) = function
+    | Legal -> assert (not state.illegal)
+    | Illegal -> assert state.illegal
 
   module TestRules = struct
-    let empty_state fen =
-      Rules.{ pos = Position.of_fen fen; events = EventSet.empty }
-
     let test_static_rule () =
       List.iter
         (fun (fen, expected_static, expected_non_static) ->
-          let state = Rules.apply (empty_state fen) Rules.[ static_rule ] in
-          let static s = EventSet.mem (Event.Static s) state.events in
-          assert (List.for_all static expected_static);
-          assert (List.for_all (Fun.negate static) expected_non_static))
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (init_state pos) [ static_rule ]) in
+          let is_static s = SquareSet.mem s state.static in
+          assert (List.for_all is_static expected_static);
+          assert (List.for_all (Fun.negate is_static) expected_non_static))
         [
           ( "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             [ a1; c1; e1; f1; h1; d2; a8; c8; d8; e8; f8; h8; e7 ],
@@ -59,9 +57,9 @@ module Internal = struct
     let test_material_rule () =
       List.iter
         (fun (fen, legality) ->
-          let state = Rules.apply (empty_state fen) Rules.[ material_rule ] in
-          let contradiction = EventSet.mem Event.Contradiction state.events in
-          legality_assertion contradiction legality)
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (init_state pos) [ material_rule ]) in
+          legality_assertion state legality)
         [
           ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Legal);
           ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", Illegal);
