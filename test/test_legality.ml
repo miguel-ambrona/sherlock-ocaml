@@ -26,11 +26,11 @@ module Internal = struct
   open Legality
   open Board.Square
 
-  type legality = Legal | Illegal
+  type legality = Illegal | TBD
 
   let legality_assertion (state : State.t) = function
-    | Legal -> assert (not state.illegal)
     | Illegal -> assert state.illegal
+    | TBD -> assert (not state.illegal)
 
   module TestRules = struct
     let test_static_rule () =
@@ -61,12 +61,12 @@ module Internal = struct
           let state = Rules.(apply (State.init pos) [ material_rule ]) in
           legality_assertion state legality)
         [
-          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Legal);
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", TBD);
           ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", Illegal);
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Illegal);
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", Illegal);
           ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", Illegal);
-          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", Legal);
+          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", TBD);
         ]
 
     let tests =
