@@ -32,6 +32,27 @@ module Internal = struct
     | Illegal -> assert state.illegal
     | TBD -> assert (not state.illegal)
 
+  module TestHelpers = struct
+    let test_pawn_candidate_origins () =
+      List.iter
+        (fun (c, s, expected_origins) ->
+          assert (expected_origins = Helpers.pawn_candidate_origins c s))
+        [
+          (Color.white, e2, [ e2 ]);
+          (Color.black, e2, [ a7; b7; c7; d7; e7; f7; g7; h7 ]);
+          (Color.white, h6, [ d2; e2; f2; g2; h2 ]);
+          (Color.black, h6, [ g7; h7 ]);
+          (Color.white, b4, [ a2; b2; c2; d2 ]);
+          (Color.black, b4, [ a7; b7; c7; d7; e7 ]);
+        ]
+
+    let tests =
+      Alcotest.
+        [
+          test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
+        ]
+  end
+
   module TestRules = struct
     let test_static_rule () =
       List.iter
@@ -80,4 +101,8 @@ end
 
 let () =
   let open Alcotest in
-  run "Legality.Internal" [ ("Rules", Internal.TestRules.tests) ]
+  run "Legality.Internal"
+    [
+      ("Helpers", Internal.TestHelpers.tests);
+      ("Rules", Internal.TestRules.tests);
+    ]

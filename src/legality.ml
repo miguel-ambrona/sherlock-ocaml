@@ -58,6 +58,18 @@ module Helpers = struct
             else [ north_west; north; north_east ]
           in
           List.filter_map (fun dir -> dir s) dirs
+
+  let pawn_candidate_origins color s =
+    let snd_rank = Board.Rank.relative 2 color in
+    let rank_distance_to_origin = abs (Square.rank s - snd_rank) in
+    let candidate_origin_files =
+      List.filter
+        (fun file -> abs (file - Square.file s) <= rank_distance_to_origin)
+        Board.files
+    in
+    List.map
+      (fun file -> Square.of_file_and_rank file snd_rank)
+      candidate_origin_files
 end
 
 module State = struct

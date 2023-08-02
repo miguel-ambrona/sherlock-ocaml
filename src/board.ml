@@ -63,6 +63,7 @@ module Square = struct
   let compare = Int.compare
   let color s = if (rank s + file s) mod 2 = 1 then Color.white else Color.black
   let is_valid s = 0 <= s && s < 64
+  let of_file_and_rank f r = (8 * r) + f
   let of_string str = File.of_char str.[0] + (8 * Rank.of_char str.[1])
 
   let to_string s =
