@@ -26,6 +26,12 @@ module Internal = struct
   open Legality
   open Board.Square
 
+  type legality = Legal | Illegal
+
+  let legality_assertion found_contradiction = function
+    | Legal -> assert (not found_contradiction)
+    | Illegal -> assert found_contradiction
+
   module TestRules = struct
     let empty_state fen =
       Rules.{ pos = Position.of_fen fen; events = EventSet.empty }
@@ -52,16 +58,17 @@ module Internal = struct
 
     let test_material_rule () =
       List.iter
-        (fun (fen, invalid) ->
+        (fun (fen, legality) ->
           let state = Rules.apply (empty_state fen) Rules.[ material_rule ] in
-          assert (invalid = EventSet.mem Event.Contradiction state.events))
+          let contradiction = EventSet.mem Event.Contradiction state.events in
+          legality_assertion contradiction legality)
         [
-          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", false);
-          ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", true);
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", true);
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", true);
-          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", true);
-          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", false);
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Legal);
+          ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", Illegal);
+          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", Illegal);
+          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", Legal);
         ]
 
     let tests =
