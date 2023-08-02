@@ -85,6 +85,9 @@ let set_piece (p, s) pos = { pos with board = Board.set_piece (p, s) pos.board }
 let remove_piece s pos = { pos with board = Board.remove_piece s pos.board }
 let piece_at s pos = Board.piece_at s pos.board
 
+let white_piece_at s pos =
+  match piece_at s pos with None -> false | Some p -> Piece.is_white p
+
 let sanitize_castling_rights board castling_rights =
   let open Square in
   {

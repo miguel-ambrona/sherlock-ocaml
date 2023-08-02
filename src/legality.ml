@@ -225,6 +225,62 @@ module Rules = struct
     then { state with illegal = true }
     else state
 
+  let origins_rule state =
+    let open Square in
+    let piece_origins (p, s) =
+      if SquareSet.mem s state.static then SquareSet.singleton s
+      else
+        let c = Piece.color p in
+        let pick l1 l2 = if Color.is_white c then l1 else l2 in
+        let rank2 = Square.rank_squares (Board.Rank.relative 2 c) in
+        (match Piece.piece_type p with
+        | King -> pick [ e1 ] [ e8 ]
+        | Queen -> rank2 @ pick [ d1 ] [ d8 ]
+        | Rook -> rank2 @ pick [ a1; h1 ] [ a8; h8 ]
+        | Bishop when Square.is_light s -> rank2 @ pick [ f1 ] [ c8 ]
+        | Bishop -> rank2 @ pick [ c1 ] [ f8 ]
+        | Knight -> rank2 @ pick [ b1; g1 ] [ b8; g8 ]
+        | Pawn -> Helpers.pawn_candidate_origins c s)
+        |> SquareSet.of_list
+    in
+    List.fold_left
+      (fun state (p, s) ->
+        let ts =
+          match SquareMap.find_opt s state.origins with
+          | None -> piece_origins (p, s)
+          | Some ts -> SquareSet.inter ts @@ piece_origins (p, s)
+        in
+        { state with origins = SquareMap.add s ts state.origins })
+      state
+      (Position.pieces state.pos)
+
+  (* The refine_origins rule is extremely powerful and it can subsume the
+     current material_rule. It is based on the idea that if there is a
+     group of k pieces whose united set of candidate origins, S, has
+     cardinality k, then we can safely remove S from the candidate origins of
+     any other piece. Furthermore, if |S| < k, the position is illegal. *)
+  let refine_origins_rule state =
+    let remove_origins protected to_rm =
+      SquareMap.mapi (fun s ts ->
+          if SquareSet.mem s protected then ts else SquareSet.diff ts to_rm)
+    in
+    let groups =
+      let is_white (s, _) = Position.white_piece_at s state.pos in
+      let ws, bs = List.partition is_white (SquareMap.bindings state.origins) in
+      Helpers.k_groups ws @ Helpers.k_groups bs
+    in
+    List.fold_left
+      (fun state (ids, set) ->
+        let ids = SquareSet.of_list ids in
+        match Int.compare (SquareSet.cardinal set) (SquareSet.cardinal ids) with
+        | -1 -> { state with illegal = true }
+        | 0 -> { state with origins = remove_origins ids set state.origins }
+        | _ -> state)
+      state groups
+
+  let all_rules =
+    [ static_rule; material_rule; origins_rule; refine_origins_rule ]
+
   let rec apply state rules =
     let rec aux state = function
       | [] -> state
@@ -235,5 +291,5 @@ module Rules = struct
 end
 
 let is_legal pos =
-  let state = Rules.(apply (State.init pos) [ static_rule; material_rule ]) in
+  let state = Rules.(apply (State.init pos) all_rules) in
   not state.illegal

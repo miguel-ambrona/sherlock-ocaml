@@ -123,11 +123,49 @@ module Internal = struct
           ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", TBD);
         ]
 
+    let test_origins_rule () =
+      List.iter
+        (fun (fen, expected_origins, legality) ->
+          let rules =
+            Rules.[ origins_rule; refine_origins_rule; static_rule ]
+          in
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (State.init pos) rules) in
+          legality_assertion state legality;
+          let exists_pair (s, t) =
+            SquareMap.find_opt s state.origins = Some (SquareSet.singleton t)
+          in
+          assert (List.for_all exists_pair expected_origins))
+        [
+          ( "r2q1rk1/1p1pp2p/pp5p/7p/3P4/7P/P1PPPP1P/R2Q1R1K w - - 0 1",
+            [ (h3, g2); (b6, c7); (h5, f7); (d4, b2); (g8, e8); (h1, e1) ],
+            TBD );
+          ( "r2qk2r/pppppp2/1B6/4P3/4P3/1P2PB2/P1PPP3/RN1QK1NR w KQkq - 0 1",
+            [ (e5, h2); (e4, g2); (e3, f2); (b3, b2); (f3, f1); (b6, c1) ],
+            TBD );
+          ( "4k3/P6p/P6p/P6p/P6p/P6p/P6p/4K3 w - - 0 1",
+            [ (h2, c7); (a7, f2) ],
+            TBD );
+          ("4k3/4p2p/5pp1/8/6p1/8/8/4K3 w - - 0 1", [ (g4, d7) ], TBD);
+          ("7k/8/P7/P7/PP6/2P5/8/7K w - - 0 1", [ (a6, e2) ], TBD);
+          ("4k3/4p2p/5pp1/6p1/8/8/8/4K3 w - - 0 1", [], Illegal);
+          ("4k3/4p2p/5p1p/6p1/8/8/8/4K3 w - - 0 1", [], Illegal);
+          ( "rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1",
+            [],
+            Illegal );
+          ( "rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            [],
+            Illegal );
+          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", [], Illegal);
+          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", [], TBD);
+        ]
+
     let tests =
       Alcotest.
         [
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
+          test_case "origins_rule" `Quick test_origins_rule;
         ]
   end
 end
