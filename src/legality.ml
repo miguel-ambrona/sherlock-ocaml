@@ -70,6 +70,53 @@ module Helpers = struct
     List.map
       (fun file -> Square.of_file_and_rank file snd_rank)
       candidate_origin_files
+
+  (* We say a set of at least k sets is a k-group iff their union results
+     in at most k elements.
+     Function k_groups takes a list of identifier-set pairs (id * set)
+     and returns a list of k-groups for different values of k. Each k-group
+     is represented by a list of (>= k) set identifiers paired with the
+     corresponding set union of that group.
+     For example,
+       foo [('a', {1, 2, 3});
+            ('b', {2, 3, 4});
+            ('c', {1, 2, 3});
+            ('d', {1, 5});
+            ('e', {1, 3, 4})]
+     returns
+      [(['a'; 'b'; 'c'; 'e'], {1, 2, 3, 4})].
+
+     It is guaranteed to return all k-groups of minimal cardinality in the
+     following sense. If there exists a k-group containing a certain set S,
+     such k-group will appear in the output unless another k'-group containing
+     S, for k' < k, has already been considered. *)
+  let k_groups sets =
+    let open SquareSet in
+    let n =
+      List.filter (fun set -> cardinal set > 1) (List.map snd sets)
+      |> List.fold_left union empty |> cardinal
+    in
+    let rec k_group k ids acc = function
+      | [] -> if List.length ids >= k then [ (ids, acc) ] else []
+      | (id, set) :: rest ->
+          let acc' = union set acc in
+          if equal acc acc' then k_group k (id :: ids) acc rest
+          else if cardinal acc' > k then k_group k ids acc rest
+          else k_group k (id :: ids) acc' rest @ k_group k ids acc rest
+    in
+    let rec find_minimal (id, set) sets k =
+      match k_group k [ id ] set sets with
+      | [] -> if k > n then [] else find_minimal (id, set) sets (k + 1)
+      | l -> l
+    in
+    let rec aux groups = function
+      | [] -> groups
+      | (id, set) :: rest ->
+          let gs = find_minimal (id, set) rest (SquareSet.cardinal set) in
+          aux (gs @ groups) rest
+    in
+    let compare_cardinals s1 s2 = Int.compare (cardinal s1) (cardinal s2) in
+    aux [] @@ List.sort (fun (_, s1) (_, s2) -> compare_cardinals s1 s2) sets
 end
 
 module State = struct

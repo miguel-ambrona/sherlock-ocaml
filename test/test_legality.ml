@@ -46,10 +46,43 @@ module Internal = struct
           (Color.black, b4, [ a7; b7; c7; d7; e7 ]);
         ]
 
+    let test_k_groups () =
+      let equivalent_ids ids1 ids2 =
+        SquareSet.(equal (of_list ids1) (of_list ids2))
+      in
+      List.iter
+        (fun (sets, expected) ->
+          let groups =
+            List.map (fun (id, l) -> (id, SquareSet.of_list l)) sets
+            |> Helpers.k_groups |> List.map fst
+          in
+          assert (List.exists (equivalent_ids expected) groups))
+        [
+          ( [
+              (1, [ a1; a2; a3 ]);
+              (2, [ a2; a3; a4 ]);
+              (3, [ a1; a2; a3 ]);
+              (4, [ a1; a5 ]);
+              (5, [ a1; a3; a4 ]);
+            ],
+            [ 1; 2; 3; 5 ] );
+          ( [
+              (1, [ b1; b2; b3; b4 ]);
+              (2, [ b5; b6; b7; b8 ]);
+              (3, [ b2; b4; b5; b1 ]);
+              (4, [ b1; b2; b3; b4; b5 ]);
+              (5, [ b2; b3; b8 ]);
+              (6, [ b2; b3; b4; b5 ]);
+              (7, [ b1; b3; b4; b5 ]);
+            ],
+            [ 1; 3; 4; 6; 7 ] );
+        ]
+
     let tests =
       Alcotest.
         [
           test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
+          test_case "k_groups" `Quick test_k_groups;
         ]
   end
 
