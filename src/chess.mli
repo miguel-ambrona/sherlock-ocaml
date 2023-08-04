@@ -133,6 +133,9 @@ module Board : sig
     val equal : t -> t -> bool
     (** [equal s1 s2] returns [true] iff squares [s1] and [s2] are the same. *)
 
+    val of_file_and_rank : File.t -> Rank.t -> t
+    (** [of_file_and_rank f r] is the square at file [f] and rank [r] *)
+
     val of_string : string -> t
     (** [of_string str] converts string [str] into a square parsing it in
       algebraic notation.

@@ -63,6 +63,9 @@ module Square = struct
   let compare = Int.compare
   let color s = if (rank s + file s) mod 2 = 1 then Color.white else Color.black
   let is_valid s = 0 <= s && s < 64
+  let is_light s = Color.is_white (color s)
+  let is_dark = Fun.negate is_light
+  let of_file_and_rank f r = (8 * r) + f
   let of_string str = File.of_char str.[0] + (8 * Rank.of_char str.[1])
 
   let to_string s =
@@ -95,6 +98,8 @@ module Piece = struct
   let knight = Knight
   let pawn = Pawn
   let color p = p.piece_color
+  let is_white p = Color.is_white (color p)
+  let is_black = Fun.negate is_white
   let piece_type p = p.piece_type
 
   let equal t1 t2 =

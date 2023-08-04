@@ -26,35 +26,9 @@ module Piece = Board.Piece
 module Square = Board.Square
 module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
-
-module Event = struct
-  type t = Static of Square.t | Contradiction
-
-  let to_string = function
-    | Static s -> Format.sprintf "Static %s" @@ Square.to_string s
-    | Contradiction -> "Contradiction"
-
-  let compare = compare
-end
-
-module EventSet = Set.Make (Event)
+module SquareMap = Map.Make (Square)
 
 module Helpers = struct
-  let print_events events =
-    let static_bb =
-      EventSet.fold
-        (fun e bb ->
-          match e with Event.Static s -> Board.Bitboard.add s bb | _ -> bb)
-        events Board.Bitboard.empty
-    in
-    Format.printf "Static:\n";
-    Board.Bitboard.print_bb static_bb;
-    Format.printf "%s\n" @@ String.concat ",\n"
-    @@ List.map Event.to_string
-         (List.filter
-            (function Event.Static _ -> false | _ -> true)
-            (EventSet.elements events))
-
   let bishop_directions =
     Direction.[ north_east; north_west; south_east; south_west ]
 
@@ -84,10 +58,92 @@ module Helpers = struct
             else [ north_west; north; north_east ]
           in
           List.filter_map (fun dir -> dir s) dirs
+
+  let pawn_candidate_origins color s =
+    let snd_rank = Board.Rank.relative 2 color in
+    let rank_distance_to_origin = abs (Square.rank s - snd_rank) in
+    let candidate_origin_files =
+      List.filter
+        (fun file -> abs (file - Square.file s) <= rank_distance_to_origin)
+        Board.files
+    in
+    List.map
+      (fun file -> Square.of_file_and_rank file snd_rank)
+      candidate_origin_files
+
+  (* We say a set of at least k sets is a k-group iff their union results
+     in at most k elements.
+     Function k_groups takes a list of identifier-set pairs (id * set)
+     and returns a list of k-groups for different values of k. Each k-group
+     is represented by a list of (>= k) set identifiers paired with the
+     corresponding set union of that group.
+     For example,
+       foo [('a', {1, 2, 3});
+            ('b', {2, 3, 4});
+            ('c', {1, 2, 3});
+            ('d', {1, 5});
+            ('e', {1, 3, 4})]
+     returns
+      [(['a'; 'b'; 'c'; 'e'], {1, 2, 3, 4})].
+
+     It is guaranteed to return all k-groups of minimal cardinality in the
+     following sense. If there exists a k-group containing a certain set S,
+     such k-group will appear in the output unless another k'-group containing
+     S, for k' < k, has already been considered. *)
+  let k_groups sets =
+    let open SquareSet in
+    let n =
+      List.filter (fun set -> cardinal set > 1) (List.map snd sets)
+      |> List.fold_left union empty |> cardinal
+    in
+    let rec k_group k ids acc = function
+      | [] -> if List.length ids >= k then [ (ids, acc) ] else []
+      | (id, set) :: rest ->
+          let acc' = union set acc in
+          if equal acc acc' then k_group k (id :: ids) acc rest
+          else if cardinal acc' > k then k_group k ids acc rest
+          else k_group k (id :: ids) acc' rest @ k_group k ids acc rest
+    in
+    let rec find_minimal (id, set) sets k =
+      match k_group k [ id ] set sets with
+      | [] -> if k > n then [] else find_minimal (id, set) sets (k + 1)
+      | l -> l
+    in
+    let rec aux groups = function
+      | [] -> groups
+      | (id, set) :: rest ->
+          let gs = find_minimal (id, set) rest (SquareSet.cardinal set) in
+          aux (gs @ groups) rest
+    in
+    let compare_cardinals s1 s2 = Int.compare (cardinal s1) (cardinal s2) in
+    aux [] @@ List.sort (fun (_, s1) (_, s2) -> compare_cardinals s1 s2) sets
+end
+
+module State = struct
+  type t = {
+    pos : Position.t;
+    static : SquareSet.t;
+    origins : SquareSet.t SquareMap.t;
+    illegal : bool;
+  }
+
+  let init pos =
+    {
+      pos;
+      static = SquareSet.empty;
+      origins = SquareMap.empty;
+      illegal = false;
+    }
+
+  let equal s1 s2 =
+    Position.equal s1.pos s2.pos
+    && SquareSet.equal s1.static s2.static
+    && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && Bool.equal s1.illegal s2.illegal
 end
 
 module Rules = struct
-  type state = { pos : Position.t; events : EventSet.t }
+  open State
 
   let static_rule state =
     let open Square in
@@ -104,34 +160,31 @@ module Rules = struct
         ]
       |> List.concat
     in
-    let is_static events s = EventSet.mem (Event.Static s) events in
+    let is_static ~state s = SquareSet.mem s state.static in
     (* Static marriage: king and queen are static if they are sourounded
        by static pieces, even without castling rights enabled *)
     let marriage_static =
       List.concat_map
         (fun (border, marriage) ->
-          if List.for_all (is_static state.events) border then marriage else [])
+          if List.for_all (is_static ~state) border then marriage else [])
         [
           ([ c1; c2; d2; e2; f2; f1 ], [ d1; e1 ]);
           ([ c8; c7; d7; e7; f7; f8 ], [ d8; e8 ]);
         ]
     in
-    let static_events =
+    let static =
       castling_static @ marriage_static
-      |> List.map (fun s -> Event.Static s)
-      |> EventSet.of_list
+      |> SquareSet.of_list
+      |> SquareSet.union state.static
     in
     (* Static pieces due to restricted movements *)
-    let new_events =
-      List.fold_left
-        (fun events (p, s) ->
-          if List.for_all (is_static events) (Helpers.predecessors p s) then
-            EventSet.add (Event.Static s) events
-          else events)
-        (EventSet.union state.events static_events)
-        (Position.pieces state.pos)
-    in
-    { state with events = new_events }
+    List.fold_left
+      (fun state (p, s) ->
+        if List.for_all (is_static ~state) (Helpers.predecessors p s) then
+          { state with static = SquareSet.add s state.static }
+        else state)
+      { state with static }
+      (Position.pieces state.pos)
 
   let material_rule state =
     let board = Position.board state.pos in
@@ -169,8 +222,64 @@ module Rules = struct
       || nb_wPs > 8 || nb_bPs > 8
       || 8 - nb_wPs < lbound_promoted_white
       || 8 - nb_bPs < lbound_promoted_black
-    then { state with events = EventSet.add Contradiction state.events }
+    then { state with illegal = true }
     else state
+
+  let origins_rule state =
+    let open Square in
+    let piece_origins (p, s) =
+      if SquareSet.mem s state.static then SquareSet.singleton s
+      else
+        let c = Piece.color p in
+        let pick l1 l2 = if Color.is_white c then l1 else l2 in
+        let rank2 = Square.rank_squares (Board.Rank.relative 2 c) in
+        (match Piece.piece_type p with
+        | King -> pick [ e1 ] [ e8 ]
+        | Queen -> rank2 @ pick [ d1 ] [ d8 ]
+        | Rook -> rank2 @ pick [ a1; h1 ] [ a8; h8 ]
+        | Bishop when Square.is_light s -> rank2 @ pick [ f1 ] [ c8 ]
+        | Bishop -> rank2 @ pick [ c1 ] [ f8 ]
+        | Knight -> rank2 @ pick [ b1; g1 ] [ b8; g8 ]
+        | Pawn -> Helpers.pawn_candidate_origins c s)
+        |> SquareSet.of_list
+    in
+    List.fold_left
+      (fun state (p, s) ->
+        let ts =
+          match SquareMap.find_opt s state.origins with
+          | None -> piece_origins (p, s)
+          | Some ts -> SquareSet.inter ts @@ piece_origins (p, s)
+        in
+        { state with origins = SquareMap.add s ts state.origins })
+      state
+      (Position.pieces state.pos)
+
+  (* The refine_origins rule is extremely powerful and it can subsume the
+     current material_rule. It is based on the idea that if there is a
+     group of k pieces whose united set of candidate origins, S, has
+     cardinality k, then we can safely remove S from the candidate origins of
+     any other piece. Furthermore, if |S| < k, the position is illegal. *)
+  let refine_origins_rule state =
+    let remove_origins protected to_rm =
+      SquareMap.mapi (fun s ts ->
+          if SquareSet.mem s protected then ts else SquareSet.diff ts to_rm)
+    in
+    let groups =
+      let is_white (s, _) = Position.white_piece_at s state.pos in
+      let ws, bs = List.partition is_white (SquareMap.bindings state.origins) in
+      Helpers.k_groups ws @ Helpers.k_groups bs
+    in
+    List.fold_left
+      (fun state (ids, set) ->
+        let ids = SquareSet.of_list ids in
+        match Int.compare (SquareSet.cardinal set) (SquareSet.cardinal ids) with
+        | -1 -> { state with illegal = true }
+        | 0 -> { state with origins = remove_origins ids set state.origins }
+        | _ -> state)
+      state groups
+
+  let all_rules =
+    [ static_rule; material_rule; origins_rule; refine_origins_rule ]
 
   let rec apply state rules =
     let rec aux state = function
@@ -178,11 +287,9 @@ module Rules = struct
       | rule :: rules -> aux (rule state) rules
     in
     let new_state = aux state rules in
-    if EventSet.equal state.events new_state.events then state
-    else apply new_state rules
+    if State.equal state new_state then state else apply new_state rules
 end
 
 let is_legal pos =
-  let init_state = Rules.{ pos; events = EventSet.empty } in
-  let state = Rules.apply init_state Rules.[ static_rule; material_rule ] in
-  not (EventSet.mem Contradiction state.events)
+  let state = Rules.(apply (State.init pos) all_rules) in
+  not state.illegal
