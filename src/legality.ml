@@ -27,21 +27,9 @@ module Square = Board.Square
 module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
 module SquareMap = Map.Make (Square)
+module PieceMap = Map.Make (Piece)
 
 module Helpers = struct
-  let bishop_directions =
-    Direction.[ north_east; north_west; south_east; south_west ]
-
-  let rook_directions = Direction.[ north; south; east; west ]
-  let queen_directions = bishop_directions @ bishop_directions
-  let king_directions = queen_directions
-
-  let piece_directions = function
-    | Piece.King | Piece.Queen -> rook_directions @ bishop_directions
-    | Piece.Rook -> rook_directions
-    | Piece.Bishop -> bishop_directions
-    | Piece.Knight | Piece.Pawn -> assert false
-
   let predecessors piece s =
     let open Direction in
     match Piece.piece_type piece with
@@ -124,6 +112,7 @@ module State = struct
     pos : Position.t;
     static : SquareSet.t;
     origins : SquareSet.t SquareMap.t;
+    mobility : Mobility.G.t PieceMap.t;
     illegal : bool;
   }
 
@@ -132,13 +121,21 @@ module State = struct
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
+      mobility =
+        PieceMap.of_seq
+          (List.to_seq
+          @@ List.map (fun p -> (p, Mobility.piece_graph p)) Piece.all_pieces);
       illegal = false;
     }
 
   let equal s1 s2 =
+    (* Our rules only remove edges, so diffs between graphs can be detected
+       by comparing the number of edges. (There is no G.equal in ocamlgraph) *)
+    let same_nb_edges g1 g2 = Mobility.G.(nb_edges g1 = nb_edges g2) in
     Position.equal s1.pos s2.pos
     && SquareSet.equal s1.static s2.static
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && PieceMap.equal same_nb_edges s1.mobility s2.mobility
     && Bool.equal s1.illegal s2.illegal
 end
 
@@ -278,8 +275,53 @@ module Rules = struct
         | _ -> state)
       state groups
 
+  let mobility_rule state =
+    (* if a piece is static, no piece has moved from its square *)
+    let remove_arrows_passing_through s g =
+      let f o t = s <> o && s <> t && not (Square.aligned o s t) in
+      Mobility.filter_edges f g
+    in
+    let mobility =
+      SquareSet.fold
+        (fun s -> PieceMap.map (remove_arrows_passing_through s))
+        state.static state.mobility
+    in
+    { state with mobility }
+
+  let paths_rule state =
+    (* there must exist a path to a piece from any of its candidate origins *)
+    let feasible_origin target origin =
+      let p = Position.piece_at target state.pos |> Option.get in
+      let p_graph = PieceMap.find p state.mobility in
+      let c = Piece.color p in
+      match Piece.piece_type p with
+      | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
+        ->
+          (* the piece at target is promoted *)
+          let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
+          List.exists
+            (fun promotion ->
+              Mobility.connected pawn_graph origin promotion
+              && Mobility.connected p_graph promotion target)
+            (Square.rank_squares (Board.Rank.relative 8 c))
+      | _ -> Mobility.connected p_graph origin target
+    in
+    let origins =
+      SquareMap.mapi
+        (fun s -> SquareSet.filter (feasible_origin s))
+        state.origins
+    in
+    { state with origins }
+
   let all_rules =
-    [ static_rule; material_rule; origins_rule; refine_origins_rule ]
+    [
+      static_rule;
+      material_rule;
+      origins_rule;
+      refine_origins_rule;
+      mobility_rule;
+      paths_rule;
+    ]
 
   let rec apply state rules =
     let rec aux state = function
