@@ -160,12 +160,53 @@ module Internal = struct
           ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", [], TBD);
         ]
 
+    let test_mobility_rule () =
+      List.iter
+        (fun (fen, s, reachable, unreachable) ->
+          let pos = Position.of_fen fen in
+          let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
+          let static = List.filter bP_in_s Board.squares in
+          let state = State.init pos in
+          let state = { state with static = SquareSet.of_list static } in
+          let state = Rules.(apply state [ mobility_rule ]) in
+          let p = Position.piece_at s pos |> Option.get in
+          let g = PieceMap.find p state.mobility in
+          assert (List.for_all (Mobility.connected g s) reachable);
+          assert (not @@ List.exists (Mobility.connected g s) unreachable))
+        [
+          ( "4k3/pppppppp/8/8/8/8/8/8 w - - 0 1",
+            e8,
+            [ a8; d8; f8; g8; h8 ],
+            [ a7; h2; e5 ] );
+          ( "4p3/p1pppppp/1p6/4pp2/4p1p1/4p2p/ppppppp1/3Q4 w - - 0 1",
+            d1,
+            [ a8; d8; a3 ],
+            [ f8; h8 ] );
+          ( "8/3p4/2p1p3/1p2Rp2/2p1p3/2p2p2/3pp3/8 w - - 0 1",
+            e5,
+            [ c5; e3 ],
+            [ a8; h1 ] );
+          ( "8/3p1p2/2p5/1p3p2/p5p1/8/8/7B w - - 0 1",
+            h1,
+            [ b1; d1; h1; d5; e6 ],
+            [ c8; a6; b5; g4; g8; h7 ] );
+          ( "8/8/8/6p1/4ppp1/3p1pp1/4p3/3p2N1 w - - 0 1",
+            g1,
+            [ g1; h3; f2; h1 ],
+            [ d1; c2; a8; a7; g8; h8; d5 ] );
+          ( "8/8/3p2p1/6p1/3p2p1/8/5P2/8 w - - 0 1",
+            f2,
+            [ d5; a8; h5 ],
+            [ c5; a7; h3 ] );
+        ]
+
     let tests =
       Alcotest.
         [
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
+          test_case "mobility_rule" `Quick test_mobility_rule;
         ]
   end
 end

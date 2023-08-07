@@ -27,6 +27,7 @@ module Square = Board.Square
 module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
 module SquareMap = Map.Make (Square)
+module PieceMap = Map.Make (Piece)
 
 module Helpers = struct
   let predecessors piece s =
@@ -111,6 +112,7 @@ module State = struct
     pos : Position.t;
     static : SquareSet.t;
     origins : SquareSet.t SquareMap.t;
+    mobility : Mobility.G.t PieceMap.t;
     illegal : bool;
   }
 
@@ -119,13 +121,21 @@ module State = struct
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
+      mobility =
+        PieceMap.of_seq
+          (List.to_seq
+          @@ List.map (fun p -> (p, Mobility.piece_graph p)) Piece.all_pieces);
       illegal = false;
     }
 
   let equal s1 s2 =
+    (* Our rules only remove edges, so diffs between graphs can be detected
+       by comparing the number of edges. (There is no G.equal in ocamlgraph) *)
+    let same_nb_edges g1 g2 = Mobility.G.(nb_edges g1 = nb_edges g2) in
     Position.equal s1.pos s2.pos
     && SquareSet.equal s1.static s2.static
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && PieceMap.equal same_nb_edges s1.mobility s2.mobility
     && Bool.equal s1.illegal s2.illegal
 end
 
@@ -265,8 +275,27 @@ module Rules = struct
         | _ -> state)
       state groups
 
+  let mobility_rule state =
+    (* if a piece is static, no piece has moved from its square *)
+    let remove_arrows_passing_through s g =
+      let f o t = s <> o && s <> t && not (Square.aligned o s t) in
+      Mobility.filter_edges f g
+    in
+    let mobility =
+      SquareSet.fold
+        (fun s -> PieceMap.map (remove_arrows_passing_through s))
+        state.static state.mobility
+    in
+    { state with mobility }
+
   let all_rules =
-    [ static_rule; material_rule; origins_rule; refine_origins_rule ]
+    [
+      static_rule;
+      material_rule;
+      origins_rule;
+      refine_origins_rule;
+      mobility_rule;
+    ]
 
   let rec apply state rules =
     let rec aux state = function
