@@ -85,6 +85,25 @@ module Square = struct
 
   let king_distance s1 s2 =
     Int.(max (abs @@ (file s1 - file s2)) (abs @@ (rank s1 - rank s2)))
+
+  let in_same_inc_diag s1 s2 = file s1 - file s2 = rank s1 - rank s2
+  let in_same_dec_diag s1 s2 = file s1 - file s2 = rank s2 - rank s1
+  let in_same_diagonal s1 s2 = in_same_inc_diag s1 s2 || in_same_dec_diag s1 s2
+  let in_same_file_or_rank s1 s2 = file s1 = file s2 || rank s1 = rank s2
+  let in_same_line s1 s2 = in_same_diagonal s1 s2 || in_same_file_or_rank s1 s2
+
+  (* [aligned s1 s2 s3] is true iff the squares are in the same file, rank
+     or diagonal and s2 is in between s1 and s3.
+     We allow s2 to be equal to s1 or s3. *)
+  let aligned s1 s2 s3 =
+    let d1 = max (king_distance s1 s2) (king_distance s1 s3) in
+    let d2 = max (king_distance s1 s2) (king_distance s2 s3) in
+    let d3 = max (king_distance s1 s3) (king_distance s2 s3) in
+    ((file s1 = file s2 && file s2 = file s3)
+    || (rank s1 = rank s2 && rank s2 = rank s3)
+    || (in_same_inc_diag s1 s2 && in_same_inc_diag s2 s3)
+    || (in_same_dec_diag s1 s2 && in_same_dec_diag s2 s3))
+    && d2 <= d1 && d2 <= d3
 end
 
 module Piece = struct
@@ -105,6 +124,7 @@ module Piece = struct
   let equal t1 t2 =
     piece_type t1 = piece_type t2 && Color.equal (color t1) (color t2)
 
+  let compare = compare
   let make piece_color piece_type = { piece_type; piece_color }
   let wK = make Color.white king
   let wQ = make Color.white queen
@@ -118,6 +138,8 @@ module Piece = struct
   let bB = make Color.black bishop
   let bN = make Color.black knight
   let bP = make Color.black pawn
+  let all_pieces = [ wK; wQ; wR; wB; wN; wP; bK; bQ; bR; bB; bN; bP ]
+  let cP c = make c pawn
 
   let piece_type_of_char c =
     match c with
@@ -179,6 +201,20 @@ module Direction = struct
       Option.bind (south_west s) west;
     ]
     |> List.filter_map Fun.id
+
+  let king_neighbors s = diag_neighbors s @ straight_neighbors s
+
+  let pawn_forward_targets c s =
+    let up = if Color.is_white c then north else south in
+    [
+      (if Square.in_relative_rank 2 c s then Option.bind (up s) up else None);
+      up s;
+      Option.bind (up s) east;
+      Option.bind (up s) west;
+    ]
+    |> List.filter_map Fun.id
+
+  let pawn_backward_targets c s = pawn_forward_targets (Color.negate c) s
 end
 
 module Bitboard = struct
