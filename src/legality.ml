@@ -288,6 +288,31 @@ module Rules = struct
     in
     { state with mobility }
 
+  let paths_rule state =
+    (* there must exist a path to a piece from any of its candidate origins *)
+    let feasible_origin target origin =
+      let p = Position.piece_at target state.pos |> Option.get in
+      let p_graph = PieceMap.find p state.mobility in
+      let c = Piece.color p in
+      match Piece.piece_type p with
+      | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
+        ->
+          (* the piece at target is promoted *)
+          let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
+          List.exists
+            (fun promotion ->
+              Mobility.connected pawn_graph origin promotion
+              && Mobility.connected p_graph promotion target)
+            (Square.rank_squares (Board.Rank.relative 8 c))
+      | _ -> Mobility.connected p_graph origin target
+    in
+    let origins =
+      SquareMap.mapi
+        (fun s -> SquareSet.filter (feasible_origin s))
+        state.origins
+    in
+    { state with origins }
+
   let all_rules =
     [
       static_rule;
@@ -295,6 +320,7 @@ module Rules = struct
       origins_rule;
       refine_origins_rule;
       mobility_rule;
+      paths_rule;
     ]
 
   let rec apply state rules =

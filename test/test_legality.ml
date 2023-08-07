@@ -200,6 +200,40 @@ module Internal = struct
             [ c5; a7; h3 ] );
         ]
 
+    let test_paths_rule () =
+      let rules =
+        Rules.
+          [
+            static_rule;
+            origins_rule;
+            refine_origins_rule;
+            mobility_rule;
+            paths_rule;
+          ]
+      in
+      List.iter
+        (fun (fen, expected_origins, legality) ->
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (State.init pos) rules) in
+          legality_assertion state legality;
+          let exists_pair (s, t) =
+            SquareMap.find_opt s state.origins = Some (SquareSet.singleton t)
+          in
+          assert (List.for_all exists_pair expected_origins))
+        [
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w - - 0 1", [], Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1", [], Illegal);
+          ( "rnbqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
+            [ (a3, g2) ],
+            TBD );
+          ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
+            [],
+            Illegal );
+          ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR w KQkq - 0 1",
+            [ (a3, f2) ],
+            TBD );
+        ]
+
     let tests =
       Alcotest.
         [
@@ -207,6 +241,7 @@ module Internal = struct
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
           test_case "mobility_rule" `Quick test_mobility_rule;
+          test_case "paths_rule" `Quick test_paths_rule;
         ]
   end
 end
