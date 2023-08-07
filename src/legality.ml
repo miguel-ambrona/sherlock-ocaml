@@ -29,19 +29,6 @@ module SquareSet = Set.Make (Square)
 module SquareMap = Map.Make (Square)
 
 module Helpers = struct
-  let bishop_directions =
-    Direction.[ north_east; north_west; south_east; south_west ]
-
-  let rook_directions = Direction.[ north; south; east; west ]
-  let queen_directions = bishop_directions @ bishop_directions
-  let king_directions = queen_directions
-
-  let piece_directions = function
-    | Piece.King | Piece.Queen -> rook_directions @ bishop_directions
-    | Piece.Rook -> rook_directions
-    | Piece.Bishop -> bishop_directions
-    | Piece.Knight | Piece.Pawn -> assert false
-
   let predecessors piece s =
     let open Direction in
     match Piece.piece_type piece with

@@ -50,7 +50,7 @@ module Matrix = struct
           |> String.concat "   "))
     |> String.concat "\n"
 
-  let print bb = Format.printf "%s\n>>\n" @@ to_string bb
+  let print matrices = Format.printf "%s\n>>\n" @@ to_string matrices
 end
 
 let print_state (state : State.t) =
