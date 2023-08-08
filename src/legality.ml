@@ -112,6 +112,7 @@ module State = struct
     pos : Position.t;
     static : SquareSet.t;
     origins : SquareSet.t SquareMap.t;
+    captures : int SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
     illegal : bool;
   }
@@ -121,6 +122,7 @@ module State = struct
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
+      captures = SquareMap.empty;
       mobility =
         PieceMap.of_seq
           (List.to_seq
@@ -136,6 +138,7 @@ module State = struct
     && SquareSet.equal s1.static s2.static
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
+    && SquareMap.equal Int.equal s1.captures s2.captures
     && Bool.equal s1.illegal s2.illegal
 end
 

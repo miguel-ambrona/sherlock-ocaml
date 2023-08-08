@@ -67,6 +67,11 @@ let print_state (state : State.t) =
       state.origins
       (Matrix.empty, Matrix.empty, 1)
   in
+  let captures_matrix =
+    SquareMap.fold
+      (fun s n -> Matrix.add s (48 - 64 + n))
+      state.captures Matrix.empty
+  in
   Format.printf "\n\n\n";
   Format.printf ">> pos: %s\n" @@ Position.to_fen state.pos;
   Format.printf ">> proven illegal: %b\n" state.illegal;
@@ -86,4 +91,6 @@ let print_state (state : State.t) =
           (Square.to_string s)
           (String.concat ", "
              (SquareSet.elements ts |> List.map Square.to_string)))
-    state.origins
+    state.origins;
+  Format.printf ">> min_nb_captures:\n";
+  Matrix.print [ captures_matrix ]
