@@ -163,6 +163,7 @@ module Internal = struct
     let test_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
+          let connected g s t = Mobility.distance ~infty:16 g s t < 16 in
           let pos = Position.of_fen fen in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
@@ -171,8 +172,8 @@ module Internal = struct
           let state = Rules.(apply state [ mobility_rule ]) in
           let p = Position.piece_at s pos |> Option.get in
           let g = PieceMap.find p state.mobility in
-          assert (List.for_all (Mobility.connected g s) reachable);
-          assert (not @@ List.exists (Mobility.connected g s) unreachable))
+          assert (List.for_all (connected g s) reachable);
+          assert (not @@ List.exists (connected g s) unreachable))
         [
           ( "4k3/pppppppp/8/8/8/8/8/8 w - - 0 1",
             e8,
@@ -234,6 +235,59 @@ module Internal = struct
             TBD );
         ]
 
+    let test_captures_rule () =
+      let rules =
+        Rules.
+          [
+            static_rule;
+            origins_rule;
+            refine_origins_rule;
+            mobility_rule;
+            paths_rule;
+            captures_rule;
+          ]
+      in
+      List.iter
+        (fun (fen, expected_captures) ->
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (State.init pos) rules) in
+          List.iter
+            (fun (s, n) -> assert (n = SquareMap.find s state.captures))
+            expected_captures)
+        [
+          ("4k3/8/8/8/8/7P/7P/4K3 w - - 0 1", [ (h3, 1) ]);
+          ("4k3/8/8/8/7P/7P/7P/4K3 w - - 0 1", [ (h4, 2) ]);
+          ("4k3/P7/P7/8/1P6/2P5/P2P4/4K3 w - - 0 1", [ (a6, 4); (a7, 5) ]);
+          ("r3kb1r/1ppppppp/p7/8/8/B7/PP1PPPPP/RN1QKBNR w - - 0 1", [ (a3, 3) ]);
+          ("r3k3/1ppppppp/8/p6R/8/8/PPPPP1PP/1NBQKBNR w - - 0 1", [ (h5, 5) ]);
+        ]
+
+    let test_too_many_captures_rule () =
+      let rules =
+        Rules.
+          [
+            static_rule;
+            origins_rule;
+            refine_origins_rule;
+            mobility_rule;
+            paths_rule;
+            captures_rule;
+            too_many_captures_rule;
+          ]
+      in
+      List.iter
+        (fun (fen, legality) ->
+          let pos = Position.of_fen fen in
+          let state = Rules.(apply (State.init pos) rules) in
+          Debug.print_state state;
+          legality_assertion state legality)
+        [
+          ("3qk3/3ppp2/8/P6P/P6P/P6P/P6P/4K3 w - - 0 1", Illegal);
+          ("3qk3/3pp3/8/P6P/P6P/P6P/P6P/4K3 w - - 0 1", TBD);
+          ("2bqk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3 w - - 0 1", Illegal);
+          ("3qk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3 w - - 0 1", TBD);
+        ]
+
     let tests =
       Alcotest.
         [
@@ -242,6 +296,8 @@ module Internal = struct
           test_case "origins_rule" `Quick test_origins_rule;
           test_case "mobility_rule" `Quick test_mobility_rule;
           test_case "paths_rule" `Quick test_paths_rule;
+          test_case "captures_rule" `Quick test_captures_rule;
+          test_case "enough_captures_rule" `Quick test_too_many_captures_rule;
         ]
   end
 end

@@ -66,11 +66,11 @@ module Helpers = struct
      is represented by a list of (>= k) set identifiers paired with the
      corresponding set union of that group.
      For example,
-       foo [('a', {1, 2, 3});
-            ('b', {2, 3, 4});
-            ('c', {1, 2, 3});
-            ('d', {1, 5});
-            ('e', {1, 3, 4})]
+       k_groups [('a', {1, 2, 3});
+                 ('b', {2, 3, 4});
+                 ('c', {1, 2, 3});
+                 ('d', {1, 5});
+                 ('e', {1, 3, 4})]
      returns
       [(['a'; 'b'; 'c'; 'e'], {1, 2, 3, 4})].
 
@@ -109,10 +109,24 @@ end
 
 module State = struct
   type t = {
+    (* The position being analyzed. *)
     pos : Position.t;
+    (* Set of squares where there is a piece that cannot possibly have moved. *)
     static : SquareSet.t;
+    (* Indicates the potential candidate origins of pieces still on the board.
+       For example, [a4 -> {a2, b2}] means that the piece currently on a4
+       started the game in either a2 or b2. *)
     origins : SquareSet.t SquareMap.t;
+    (* Indicates the minimum number of captures performed by pieces still on the
+       board. For example, [a4 -> 2] means that the piece currently on a4 has
+       performed at least 2 captures. *)
+    captures : int SquareMap.t;
+    (* A map from pieces to mobility graphs (graphs where nodes are squares and
+       arrows indicate that the piece may have possibly moved between the
+       squares during the game. *)
     mobility : Mobility.G.t PieceMap.t;
+    (* A flag indicating whether the position has been proven illegal.
+       A value of [false] does not necessarily mean the position is legal. *)
     illegal : bool;
   }
 
@@ -121,6 +135,7 @@ module State = struct
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
+      captures = SquareMap.empty;
       mobility =
         PieceMap.of_seq
           (List.to_seq
@@ -136,6 +151,7 @@ module State = struct
     && SquareSet.equal s1.static s2.static
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
+    && SquareMap.equal Int.equal s1.captures s2.captures
     && Bool.equal s1.illegal s2.illegal
 end
 
@@ -288,30 +304,64 @@ module Rules = struct
     in
     { state with mobility }
 
+  (* [distance_to_origin ~infty ~state o t is a lower bound on the number of
+     captures needed for the piece standing on t to have come from the original
+     square o. If such path is impossible, this function returns infty. *)
+  let distance_to_origin ~infty ~state origin target =
+    let distance = Mobility.distance ~infty in
+    let p = Position.piece_at target state.pos |> Option.get in
+    let p_graph = PieceMap.find p state.mobility in
+    let c = Piece.color p in
+    match Piece.piece_type p with
+    | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
+      ->
+        (* the piece at target is promoted *)
+        let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
+        List.map
+          (fun promotion ->
+            distance pawn_graph origin promotion
+            + distance p_graph promotion target)
+          (Square.rank_squares (Board.Rank.relative 8 c))
+        |> List.fold_left min infty
+    | _ -> distance p_graph origin target
+
   let paths_rule state =
+    let infty = 16 in
     (* there must exist a path to a piece from any of its candidate origins *)
-    let feasible_origin target origin =
-      let p = Position.piece_at target state.pos |> Option.get in
-      let p_graph = PieceMap.find p state.mobility in
-      let c = Piece.color p in
-      match Piece.piece_type p with
-      | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
-        ->
-          (* the piece at target is promoted *)
-          let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
-          List.exists
-            (fun promotion ->
-              Mobility.connected pawn_graph origin promotion
-              && Mobility.connected p_graph promotion target)
-            (Square.rank_squares (Board.Rank.relative 8 c))
-      | _ -> Mobility.connected p_graph origin target
-    in
     let origins =
       SquareMap.mapi
-        (fun s -> SquareSet.filter (feasible_origin s))
+        (fun s ->
+          SquareSet.filter (fun o ->
+              distance_to_origin ~infty ~state o s < infty))
         state.origins
     in
     { state with origins }
+
+  let captures_rule state =
+    let infty = 16 in
+    let captures =
+      SquareMap.mapi
+        (fun s origins ->
+          SquareSet.elements origins
+          |> List.map (fun o -> distance_to_origin ~infty ~state o s)
+          |> List.fold_left min infty)
+        state.origins
+    in
+    { state with captures }
+
+  let too_many_captures_rule state =
+    let nb_white_captured, nb_black_captured =
+      SquareMap.fold
+        (fun s n (nb_w, nb_b) ->
+          if Position.white_piece_at s state.pos then (nb_w, nb_b + n)
+          else (nb_w + n, nb_b))
+        state.captures (0, 0)
+    in
+    let nb_white = List.length (Position.white_pieces state.pos) in
+    let nb_black = List.length (Position.black_pieces state.pos) in
+    if nb_white_captured > 16 - nb_white || nb_black_captured > 16 - nb_black
+    then { state with illegal = true }
+    else state
 
   let all_rules =
     [
@@ -321,6 +371,8 @@ module Rules = struct
       refine_origins_rule;
       mobility_rule;
       paths_rule;
+      captures_rule;
+      too_many_captures_rule;
     ]
 
   let rec apply state rules =

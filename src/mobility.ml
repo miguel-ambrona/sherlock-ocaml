@@ -82,11 +82,8 @@ let piece_graph p =
       let weight s t = if Square.(file s = file t) then 0 else 1 in
       slow_piece_graph ~weight (pawn_forward_targets c)
 
-let connected g s t =
-  try
-    let _ = Path.shortest_path g s t in
-    true
-  with Not_found -> false
+let distance ~infty g s t =
+  try snd @@ Path.shortest_path g s t with Not_found -> infty
 
 let filter_edges f g =
   G.fold_edges (fun s t g -> if f s t then g else G.remove_edge g s t) g g
