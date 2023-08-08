@@ -163,6 +163,8 @@ module Internal = struct
     let test_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
+          let infty = 16 in
+          let connected g s t = Mobility.distance ~infty g s t < infty in
           let pos = Position.of_fen fen in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
@@ -171,8 +173,8 @@ module Internal = struct
           let state = Rules.(apply state [ mobility_rule ]) in
           let p = Position.piece_at s pos |> Option.get in
           let g = PieceMap.find p state.mobility in
-          assert (List.for_all (Mobility.connected g s) reachable);
-          assert (not @@ List.exists (Mobility.connected g s) unreachable))
+          assert (List.for_all (connected g s) reachable);
+          assert (not @@ List.exists (connected g s) unreachable))
         [
           ( "4k3/pppppppp/8/8/8/8/8/8 w - - 0 1",
             e8,
@@ -216,6 +218,7 @@ module Internal = struct
           let pos = Position.of_fen fen in
           let state = Rules.(apply (State.init pos) rules) in
           legality_assertion state legality;
+          Debug.print_state state;
           let exists_pair (s, t) =
             SquareMap.find_opt s state.origins = Some (SquareSet.singleton t)
           in
@@ -224,13 +227,19 @@ module Internal = struct
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w - - 0 1", [], Illegal);
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1", [], Illegal);
           ( "rnbqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
+            [],
+            Illegal );
+          ( "r1bqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
             [ (a3, g2) ],
             TBD );
           ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
             [],
             Illegal );
-          ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR w KQkq - 0 1",
+          ( "r3k3/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR w - - 0 1",
             [ (a3, f2) ],
+            TBD );
+          ( "rnbqkbnr/pppppppp/8/8/8/1PP5/P2PPPPP/RNBQKBNR w - - 0 1",
+            [ (b3, b2); (c3, c2) ],
             TBD );
         ]
 

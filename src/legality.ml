@@ -288,9 +288,56 @@ module Rules = struct
     in
     { state with mobility }
 
+  (* Given an integer n, a distance function f : Square.t -> Square.t -> int
+     and a SquareSet.t SquareMap.t, M, we say Square.t SquareMap.t A is an
+     n-satisfying instantiation for M under f if every key in M is in A, for
+     every key s A(s) is in M(s) and it holds sum_s f(A(s), s) <= n.
+
+     Function foo takes n, distance f and a set map M, and removes all elements
+     in the map bound sets that cannot possibly be part of any n-satisfying
+     instantiation for M under f. *)
+  let foo ~n ~f mapM =
+    let rec satisfying_instantiations partial_sum partial_inst mapM =
+      if SquareMap.is_empty mapM then
+        [ SquareMap.of_seq (List.to_seq partial_inst) ]
+      else
+        let s, set = SquareMap.choose mapM in
+        SquareSet.elements set
+        |> List.map (fun o -> f o s)
+        |> List.sort_uniq Int.compare
+        |> List.concat_map (fun d ->
+               if partial_sum + d > n then []
+               else
+                 satisfying_instantiations (partial_sum + d)
+                   ((s, d) :: partial_inst) (SquareMap.remove s mapM))
+    in
+    let module IntSet = Set.Make (Int) in
+    let feasible_distances_map =
+      List.fold_left
+        (fun acc mapA ->
+          SquareMap.fold
+            (fun s d acc ->
+              let set =
+                SquareMap.find_opt s acc |> Option.value ~default:IntSet.empty
+              in
+              SquareMap.add s (IntSet.add d set) acc)
+            mapA acc)
+        SquareMap.empty
+        (satisfying_instantiations 0 [] mapM)
+    in
+    SquareMap.mapi
+      (fun s set ->
+        match SquareMap.find_opt s feasible_distances_map with
+        | None -> SquareSet.empty
+        | Some mapD -> SquareSet.filter (fun o -> IntSet.mem (f o s) mapD) set)
+      mapM
+
+  let list_min l = List.fold_left min (List.hd l) (List.tl l)
+
   let paths_rule state =
     (* there must exist a path to a piece from any of its candidate origins *)
-    let feasible_origin target origin =
+    let distance_to_origin origin target =
+      let distance = Mobility.distance ~infty:16 in
       let p = Position.piece_at target state.pos |> Option.get in
       let p_graph = PieceMap.find p state.mobility in
       let c = Piece.color p in
@@ -299,19 +346,71 @@ module Rules = struct
         ->
           (* the piece at target is promoted *)
           let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
-          List.exists
+          List.map
             (fun promotion ->
-              Mobility.connected pawn_graph origin promotion
-              && Mobility.connected p_graph promotion target)
+              distance pawn_graph origin promotion
+              + distance p_graph promotion target)
             (Square.rank_squares (Board.Rank.relative 8 c))
-      | _ -> Mobility.connected p_graph origin target
+          |> list_min
+      | _ -> distance p_graph origin target
     in
-    let origins =
-      SquareMap.mapi
-        (fun s -> SquareSet.filter (feasible_origin s))
+    let origins_w, origins_b =
+      SquareMap.partition
+        (fun s _ -> Position.white_piece_at s state.pos)
         state.origins
     in
+    let nb_white = List.length (Position.white_pieces state.pos) in
+    let nb_black = List.length (Position.black_pieces state.pos) in
+    let origins_w = foo ~n:(16 - nb_black) ~f:distance_to_origin origins_w in
+    let origins_b = foo ~n:(16 - nb_white) ~f:distance_to_origin origins_b in
+    let origins =
+      SquareMap.union (fun _ _ _ -> assert false) origins_w origins_b
+    in
     { state with origins }
+
+  (* let captures_rule state =
+   *   let list_min = List.fold_left min 10000 in
+   *   let distance_to_origin target origin =
+   *     let p = Position.piece_at target state.pos |> Option.get in
+   *     let p_graph = PieceMap.find p state.mobility in
+   *     let c = Piece.color p in
+   *     match Piece.piece_type p with
+   *     | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
+   *       ->
+   *         (\* the piece at target is promoted *\)
+   *         let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
+   *         List.map
+   *           (fun promotion ->
+   *             Mobility.distance pawn_graph origin promotion
+   *             + Mobility.distance p_graph promotion target)
+   *           (Square.rank_squares (Board.Rank.relative 8 c))
+   *         |> list_min
+   *     | _ -> Mobility.distance p_graph origin target
+   *   in
+   *   let origins_distance =
+   *     SquareMap.mapi
+   *       (fun s origins ->
+   *         List.map (distance_to_origin s) (SquareSet.elements origins))
+   *       state.origins
+   *   in
+   *   let white_distances, black_distances =
+   *     SquareMap.partition
+   *       (fun s _ -> Position.white_piece_at s state.pos)
+   *       origins_distance
+   *   in
+   *   let white, black =
+   *     List.partition
+   *       (fun (p, _) -> Piece.is_white p)
+   *       (Position.pieces state.pos)
+   *   in
+   *   let wdistances = foo ~n:(16 - List.length black) white_distances in
+   *   let bdistances = foo ~n:(16 - List.length white) black_distances in
+   *   assert false *)
+  (* let dis = SquareMap.union (fun _ _ _ -> assert false) wdistances bdistances in
+   * let origins = SquareMap.filter     (fun s l ->
+   *     let ld = List.combine l (SquareMap.find
+   *   ) state.origins in
+   * {state with origins} *)
 
   let all_rules =
     [
