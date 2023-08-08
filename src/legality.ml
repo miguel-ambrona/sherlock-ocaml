@@ -109,11 +109,24 @@ end
 
 module State = struct
   type t = {
+    (* The position being analyzed. *)
     pos : Position.t;
+    (* Set of squares where there is a piece that cannot possibly have moved. *)
     static : SquareSet.t;
+    (* Indicates the potential candidate origins of pieces still on the board.
+       For example, [a4 -> {a2, b2}] means that the piece currently on a4
+       started the game in either a2 or b2. *)
     origins : SquareSet.t SquareMap.t;
+    (* Indicates the minimum number of captures performed by pieces still on the
+       board. For example, [a4 -> 2] means that the piece currently on a4 has
+       performed at least 2 captures. *)
     captures : int SquareMap.t;
+    (* A map from pieces to mobility graphs (graphs where nodes are squares and
+       arrows indicate that the piece may have possibly moved between the
+       squares during the game. *)
     mobility : Mobility.G.t PieceMap.t;
+    (* A flag indicating whether the position has been proven illegal.
+       A value of [false] does not necessarily mean the position is legal. *)
     illegal : bool;
   }
 
