@@ -66,11 +66,11 @@ module Helpers = struct
      is represented by a list of (>= k) set identifiers paired with the
      corresponding set union of that group.
      For example,
-       foo [('a', {1, 2, 3});
-            ('b', {2, 3, 4});
-            ('c', {1, 2, 3});
-            ('d', {1, 5});
-            ('e', {1, 3, 4})]
+       k_groups [('a', {1, 2, 3});
+                 ('b', {2, 3, 4});
+                 ('c', {1, 2, 3});
+                 ('d', {1, 5});
+                 ('e', {1, 3, 4})]
      returns
       [(['a'; 'b'; 'c'; 'e'], {1, 2, 3, 4})].
 
