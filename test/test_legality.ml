@@ -90,37 +90,37 @@ module Internal = struct
     let test_static_rule () =
       List.iter
         (fun (fen, expected_static, expected_non_static) ->
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " - 0 1") in
           let state = Rules.(apply (State.init pos) [ static_rule ]) in
           let is_static s = SquareSet.mem s state.static in
           assert (List.for_all is_static expected_static);
           assert (List.for_all (Fun.negate is_static) expected_non_static))
         [
-          ( "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          ( "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq",
             [ a1; c1; e1; f1; h1; d2; a8; c8; d8; e8; f8; h8; e7 ],
             [ b1; g1; b8; g8 ] );
-          ( "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1",
+          ( "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w -",
             [ d1; e1; d8; e8 ],
             [] );
-          ( "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+          ( "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq",
             [ a1; c1; e1; h1; d2; a8; c8; d8; e8; f8; h8 ],
             [ d1; f1; e2 ] );
-          ("4k3/8/8/8/8/8/1P1P4/2B1K3 w K - 0 1", [ c1; b2; d2 ], [ e1 ]);
+          ("4k3/8/8/8/8/8/1P1P4/2B1K3 w K", [ c1; b2; d2 ], [ e1 ]);
         ]
 
     let test_material_rule () =
       List.iter
         (fun (fen, legality) ->
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) [ material_rule ]) in
           legality_assertion state legality)
         [
-          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", TBD);
-          ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1", Illegal);
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Illegal);
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w KQkq - 0 1", Illegal);
-          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", Illegal);
-          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", TBD);
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", TBD);
+          ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR", Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR", Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR", Illegal);
+          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3", Illegal);
+          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3", TBD);
         ]
 
     let test_origins_rule () =
@@ -129,7 +129,7 @@ module Internal = struct
           let rules =
             Rules.[ origins_rule; refine_origins_rule; static_rule ]
           in
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
           legality_assertion state legality;
           let exists_pair (s, t) =
@@ -137,34 +137,28 @@ module Internal = struct
           in
           assert (List.for_all exists_pair expected_origins))
         [
-          ( "r2q1rk1/1p1pp2p/pp5p/7p/3P4/7P/P1PPPP1P/R2Q1R1K w - - 0 1",
+          ( "r2q1rk1/1p1pp2p/pp5p/7p/3P4/7P/P1PPPP1P/R2Q1R1K",
             [ (h3, g2); (b6, c7); (h5, f7); (d4, b2); (g8, e8); (h1, e1) ],
             TBD );
-          ( "r2qk2r/pppppp2/1B6/4P3/4P3/1P2PB2/P1PPP3/RN1QK1NR w KQkq - 0 1",
+          ( "r2qk2r/pppppp2/1B6/4P3/4P3/1P2PB2/P1PPP3/RN1QK1NR",
             [ (e5, h2); (e4, g2); (e3, f2); (b3, b2); (f3, f1); (b6, c1) ],
             TBD );
-          ( "4k3/P6p/P6p/P6p/P6p/P6p/P6p/4K3 w - - 0 1",
-            [ (h2, c7); (a7, f2) ],
-            TBD );
-          ("4k3/4p2p/5pp1/8/6p1/8/8/4K3 w - - 0 1", [ (g4, d7) ], TBD);
-          ("7k/8/P7/P7/PP6/2P5/8/7K w - - 0 1", [ (a6, e2) ], TBD);
-          ("4k3/4p2p/5pp1/6p1/8/8/8/4K3 w - - 0 1", [], Illegal);
-          ("4k3/4p2p/5p1p/6p1/8/8/8/4K3 w - - 0 1", [], Illegal);
-          ( "rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR w KQkq - 0 1",
-            [],
-            Illegal );
-          ( "rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            [],
-            Illegal );
-          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", [], Illegal);
-          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3 w - - ? 1", [], TBD);
+          ("4k3/P6p/P6p/P6p/P6p/P6p/P6p/4K3", [ (h2, c7); (a7, f2) ], TBD);
+          ("4k3/4p2p/5pp1/8/6p1/8/8/4K3", [ (g4, d7) ], TBD);
+          ("7k/8/P7/P7/PP6/2P5/8/7K", [ (a6, e2) ], TBD);
+          ("4k3/4p2p/5pp1/6p1/8/8/8/4K3", [], Illegal);
+          ("4k3/4p2p/5p1p/6p1/8/8/8/4K3", [], Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/P7/PPPPPPPP/1NBQKBNR", [], Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR", [], Illegal);
+          ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3", [], Illegal);
+          ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3", [], TBD);
         ]
 
     let test_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
           let connected g s t = Mobility.distance ~infty:16 g s t < 16 in
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
           let state = State.init pos in
@@ -175,30 +169,24 @@ module Internal = struct
           assert (List.for_all (connected g s) reachable);
           assert (not @@ List.exists (connected g s) unreachable))
         [
-          ( "4k3/pppppppp/8/8/8/8/8/8 w - - 0 1",
+          ( "4k3/pppppppp/8/8/8/8/8/8",
             e8,
             [ a8; d8; f8; g8; h8 ],
             [ a7; h2; e5 ] );
-          ( "4p3/p1pppppp/1p6/4pp2/4p1p1/4p2p/ppppppp1/3Q4 w - - 0 1",
+          ( "4p3/p1pppppp/1p6/4pp2/4p1p1/4p2p/ppppppp1/3Q4",
             d1,
             [ a8; d8; a3 ],
             [ f8; h8 ] );
-          ( "8/3p4/2p1p3/1p2Rp2/2p1p3/2p2p2/3pp3/8 w - - 0 1",
-            e5,
-            [ c5; e3 ],
-            [ a8; h1 ] );
-          ( "8/3p1p2/2p5/1p3p2/p5p1/8/8/7B w - - 0 1",
+          ("8/3p4/2p1p3/1p2Rp2/2p1p3/2p2p2/3pp3/8", e5, [ c5; e3 ], [ a8; h1 ]);
+          ( "8/3p1p2/2p5/1p3p2/p5p1/8/8/7B",
             h1,
             [ b1; d1; h1; d5; e6 ],
             [ c8; a6; b5; g4; g8; h7 ] );
-          ( "8/8/8/6p1/4ppp1/3p1pp1/4p3/3p2N1 w - - 0 1",
+          ( "8/8/8/6p1/4ppp1/3p1pp1/4p3/3p2N1",
             g1,
             [ g1; h3; f2; h1 ],
             [ d1; c2; a8; a7; g8; h8; d5 ] );
-          ( "8/8/3p2p1/6p1/3p2p1/8/5P2/8 w - - 0 1",
-            f2,
-            [ d5; a8; h5 ],
-            [ c5; a7; h3 ] );
+          ("8/8/3p2p1/6p1/3p2p1/8/5P2/8", f2, [ d5; a8; h5 ], [ c5; a7; h3 ]);
         ]
 
     let test_paths_rule () =
@@ -214,7 +202,7 @@ module Internal = struct
       in
       List.iter
         (fun (fen, expected_origins, legality) ->
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
           legality_assertion state legality;
           let exists_pair (s, t) =
@@ -222,17 +210,11 @@ module Internal = struct
           in
           assert (List.for_all exists_pair expected_origins))
         [
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR w - - 0 1", [], Illegal);
-          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1", [], Illegal);
-          ( "rnbqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
-            [ (a3, g2) ],
-            TBD );
-          ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPPP1P/RN1QKBNR w - - 0 1",
-            [],
-            Illegal );
-          ( "rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR w KQkq - 0 1",
-            [ (a3, f2) ],
-            TBD );
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR", [], Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPP1P/RN1QKBNR", [], Illegal);
+          ("rnbqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR", [ (a3, g2) ], TBD);
+          ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPPP1P/RN1QKBNR", [], Illegal);
+          ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
         ]
 
     let test_captures_rule () =
@@ -249,17 +231,17 @@ module Internal = struct
       in
       List.iter
         (fun (fen, expected_captures) ->
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
           List.iter
             (fun (s, n) -> assert (n = SquareMap.find s state.captures))
             expected_captures)
         [
-          ("4k3/8/8/8/8/7P/7P/4K3 w - - 0 1", [ (h3, 1) ]);
-          ("4k3/8/8/8/7P/7P/7P/4K3 w - - 0 1", [ (h4, 2) ]);
-          ("4k3/P7/P7/8/1P6/2P5/P2P4/4K3 w - - 0 1", [ (a6, 4); (a7, 5) ]);
-          ("r3kb1r/1ppppppp/p7/8/8/B7/PP1PPPPP/RN1QKBNR w - - 0 1", [ (a3, 3) ]);
-          ("r3k3/1ppppppp/8/p6R/8/8/PPPPP1PP/1NBQKBNR w - - 0 1", [ (h5, 5) ]);
+          ("4k3/8/8/8/8/7P/7P/4K3", [ (h3, 1) ]);
+          ("4k3/8/8/8/7P/7P/7P/4K3", [ (h4, 2) ]);
+          ("4k3/P7/P7/8/1P6/2P5/P2P4/4K3", [ (a6, 4); (a7, 5) ]);
+          ("r3kb1r/1ppppppp/p7/8/8/B7/PP1PPPPP/RN1QKBNR", [ (a3, 3) ]);
+          ("r3k3/1ppppppp/8/p6R/8/8/PPPPP1PP/1NBQKBNR", [ (h5, 5) ]);
         ]
 
     let test_too_many_captures_rule () =
@@ -277,15 +259,15 @@ module Internal = struct
       in
       List.iter
         (fun (fen, legality) ->
-          let pos = Position.of_fen fen in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
           Debug.print_state state;
           legality_assertion state legality)
         [
-          ("3qk3/3ppp2/8/P6P/P6P/P6P/P6P/4K3 w - - 0 1", Illegal);
-          ("3qk3/3pp3/8/P6P/P6P/P6P/P6P/4K3 w - - 0 1", TBD);
-          ("2bqk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3 w - - 0 1", Illegal);
-          ("3qk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3 w - - 0 1", TBD);
+          ("3qk3/3ppp2/8/P6P/P6P/P6P/P6P/4K3", Illegal);
+          ("3qk3/3pp3/8/P6P/P6P/P6P/P6P/4K3", TBD);
+          ("2bqk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3", Illegal);
+          ("3qk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3", TBD);
         ]
 
     let tests =
