@@ -29,6 +29,59 @@ module SquareSet = Set.Make (Square)
 module SquareMap = Map.Make (Square)
 module PieceMap = Map.Make (Piece)
 
+module State = struct
+  (* Proof state, containing all the information derived about the legality
+     of the position of interest:
+       - pos      : the position being analyzed.
+       - static   : set of squares where there is a piece that has never moved
+       - origins  : potential candidate origins of pieces that are still on the
+                    board. For example, [a4 -> {a2, b2}] means that the piece
+                    currently on a4 started the game in either a2 or b2.
+       - captures : lower bound on the number of captures performed by pieces
+                    that are still on the board. For example, [a4 -> 2] means
+                    that the piece currently on a4 has captures at least twice.
+                    squares and arrows indicate the possible moves the piece
+                    of interest may have performed during the game.
+       - mobility : map from pieces to mobility graphs (graphs where nodes are
+                    squares and arrows indicate the possible moves the piece
+                    of interest may have performed during the game.
+       - illegal  : flag indicating whether the position has been proven illegal
+                    ("false" does not necessarily mean the position is legal).
+  *)
+  type t = {
+    pos : Position.t;
+    static : SquareSet.t;
+    origins : SquareSet.t SquareMap.t;
+    captures : int SquareMap.t;
+    mobility : Mobility.G.t PieceMap.t;
+    illegal : bool;
+  }
+
+  let init pos =
+    {
+      pos;
+      static = SquareSet.empty;
+      origins = SquareMap.empty;
+      captures = SquareMap.empty;
+      mobility =
+        PieceMap.of_seq
+          (List.to_seq
+          @@ List.map (fun p -> (p, Mobility.piece_graph p)) Piece.all_pieces);
+      illegal = false;
+    }
+
+  let equal s1 s2 =
+    (* Our rules only remove edges, so diffs between graphs can be detected
+       by comparing the number of edges. (There is no G.equal in ocamlgraph) *)
+    let same_nb_edges g1 g2 = Mobility.G.(nb_edges g1 = nb_edges g2) in
+    Position.equal s1.pos s2.pos
+    && SquareSet.equal s1.static s2.static
+    && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && PieceMap.equal same_nb_edges s1.mobility s2.mobility
+    && SquareMap.equal Int.equal s1.captures s2.captures
+    && Bool.equal s1.illegal s2.illegal
+end
+
 module Helpers = struct
   let predecessors piece s =
     let open Direction in
@@ -105,59 +158,36 @@ module Helpers = struct
     in
     let compare_cardinals s1 s2 = Int.compare (cardinal s1) (cardinal s2) in
     aux [] @@ List.sort (fun (_, s1) (_, s2) -> compare_cardinals s1 s2) sets
-end
 
-module State = struct
-  type t = {
-    (* The position being analyzed. *)
-    pos : Position.t;
-    (* Set of squares where there is a piece that cannot possibly have moved. *)
-    static : SquareSet.t;
-    (* Indicates the potential candidate origins of pieces still on the board.
-       For example, [a4 -> {a2, b2}] means that the piece currently on a4
-       started the game in either a2 or b2. *)
-    origins : SquareSet.t SquareMap.t;
-    (* Indicates the minimum number of captures performed by pieces still on the
-       board. For example, [a4 -> 2] means that the piece currently on a4 has
-       performed at least 2 captures. *)
-    captures : int SquareMap.t;
-    (* A map from pieces to mobility graphs (graphs where nodes are squares and
-       arrows indicate that the piece may have possibly moved between the
-       squares during the game. *)
-    mobility : Mobility.G.t PieceMap.t;
-    (* A flag indicating whether the position has been proven illegal.
-       A value of [false] does not necessarily mean the position is legal. *)
-    illegal : bool;
-  }
-
-  let init pos =
-    {
-      pos;
-      static = SquareSet.empty;
-      origins = SquareMap.empty;
-      captures = SquareMap.empty;
-      mobility =
-        PieceMap.of_seq
-          (List.to_seq
-          @@ List.map (fun p -> (p, Mobility.piece_graph p)) Piece.all_pieces);
-      illegal = false;
-    }
-
-  let equal s1 s2 =
-    (* Our rules only remove edges, so diffs between graphs can be detected
-       by comparing the number of edges. (There is no G.equal in ocamlgraph) *)
-    let same_nb_edges g1 g2 = Mobility.G.(nb_edges g1 = nb_edges g2) in
-    Position.equal s1.pos s2.pos
-    && SquareSet.equal s1.static s2.static
-    && SquareMap.equal SquareSet.equal s1.origins s2.origins
-    && PieceMap.equal same_nb_edges s1.mobility s2.mobility
-    && SquareMap.equal Int.equal s1.captures s2.captures
-    && Bool.equal s1.illegal s2.illegal
+  (* [distance_from_origin ~infty pos mobility o t is a lower bound on the
+     number of captures needed for the piece standing on t to have come from the
+     original square o.
+     If such path is impossible, this function returns infty. *)
+  let distance_from_origin ~infty ~(state : State.t) origin target =
+    let distance = Mobility.distance ~infty in
+    let p = Position.piece_at target state.pos |> Option.get in
+    let p_graph = PieceMap.find p state.mobility in
+    let c = Piece.color p in
+    match Piece.piece_type p with
+    | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
+      ->
+        (* the piece at target is promoted *)
+        let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
+        List.map
+          (fun promotion ->
+            distance pawn_graph origin promotion
+            + distance p_graph promotion target)
+          (Square.rank_squares (Board.Rank.relative 8 c))
+        |> List.fold_left min infty
+    | _ -> distance p_graph origin target
 end
 
 module Rules = struct
   open State
 
+  (* Pawns on the 2nd rank are static, castling pieces are static if the
+     corresponding castling rights are enabled and pieces whose movement is
+     limited by static pieces are also static. *)
   let static_rule state =
     let open Square in
     (* Static pieces due to castling rights *)
@@ -199,6 +229,7 @@ module Rules = struct
       { state with static }
       (Position.pieces state.pos)
 
+  (* This rule will be removed as it will be subsumed by others. *)
   let material_rule state =
     let board = Position.board state.pos in
     let count ?square_color p = Board.count ?square_color p board in
@@ -238,6 +269,9 @@ module Rules = struct
     then { state with illegal = true }
     else state
 
+  (* The candidate origin squares of a piece are determined based on the
+     initial position of chess. Queens, Rooks, Bishops or Knights may also
+     come from the corresponding 2nd rank, as they may be promoted. *)
   let origins_rule state =
     let open Square in
     let piece_origins (p, s) =
@@ -247,11 +281,11 @@ module Rules = struct
         let pick l1 l2 = if Color.is_white c then l1 else l2 in
         let rank2 = Square.rank_squares (Board.Rank.relative 2 c) in
         (match Piece.piece_type p with
-        | King -> pick [ e1 ] [ e8 ]
-        | Queen -> rank2 @ pick [ d1 ] [ d8 ]
+        | King -> [ pick e1 e8 ]
+        | Queen -> rank2 @ [ pick d1 d8 ]
         | Rook -> rank2 @ pick [ a1; h1 ] [ a8; h8 ]
-        | Bishop when Square.is_light s -> rank2 @ pick [ f1 ] [ c8 ]
-        | Bishop -> rank2 @ pick [ c1 ] [ f8 ]
+        | Bishop when Square.is_light s -> rank2 @ [ pick f1 c8 ]
+        | Bishop -> rank2 @ [ pick c1 f8 ]
         | Knight -> rank2 @ pick [ b1; g1 ] [ b8; g8 ]
         | Pawn -> Helpers.pawn_candidate_origins c s)
         |> SquareSet.of_list
@@ -291,8 +325,8 @@ module Rules = struct
         | _ -> state)
       state groups
 
-  let mobility_rule state =
-    (* if a piece is static, no piece has moved from its square *)
+  (* If a piece is static, no piece has passed through its square *)
+  let static_mobility_rule state =
     let remove_arrows_passing_through s g =
       let f o t = s <> o && s <> t && not (Square.aligned o s t) in
       Mobility.filter_edges f g
@@ -304,51 +338,63 @@ module Rules = struct
     in
     { state with mobility }
 
-  (* [distance_to_origin ~infty ~state o t is a lower bound on the number of
-     captures needed for the piece standing on t to have come from the original
-     square o. If such path is impossible, this function returns infty. *)
-  let distance_to_origin ~infty ~state origin target =
-    let distance = Mobility.distance ~infty in
-    let p = Position.piece_at target state.pos |> Option.get in
-    let p_graph = PieceMap.find p state.mobility in
-    let c = Piece.color p in
-    match Piece.piece_type p with
-    | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
-      ->
-        (* the piece at target is promoted *)
-        let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
-        List.map
-          (fun promotion ->
-            distance pawn_graph origin promotion
-            + distance p_graph promotion target)
-          (Square.rank_squares (Board.Rank.relative 8 c))
-        |> List.fold_left min infty
-    | _ -> distance p_graph origin target
+  (* If a pawn on the 3rd rank, say on square s, has a single candidate origin,
+     say o, it is the only piece on the board that can possibly have moved
+     across the squares s <-> o. For example, if a pawn on b3 comes from b2,
+     no piece can possibly have moved from b1 to b5. *)
+  let pawn_on_3rd_rank_rule state =
+    let remove_arrows_passing_through (s1, s2) g =
+      let f o t = not (Square.aligned o s1 t && Square.aligned o s2 t) in
+      Mobility.filter_edges f g
+    in
+    let mobility =
+      SquareMap.fold
+        (fun s origins mobility ->
+          let p = Position.piece_at s state.pos |> Option.get in
+          if
+            SquareSet.cardinal origins = 1
+            && Piece.piece_type p = Pawn
+            && Square.in_relative_rank 3 (Piece.color p) s
+          then
+            let o = SquareSet.choose origins in
+            PieceMap.mapi
+              (fun p' g ->
+                if p' <> p then remove_arrows_passing_through (s, o) g else g)
+              mobility
+          else mobility)
+        state.origins state.mobility
+    in
+    { state with mobility }
 
-  let paths_rule state =
+  (* There must exist a path to a piece from any of its candidate origins. *)
+  let route_from_origin_rule state =
     let infty = 16 in
-    (* there must exist a path to a piece from any of its candidate origins *)
     let origins =
       SquareMap.mapi
         (fun s ->
           SquareSet.filter (fun o ->
-              distance_to_origin ~infty ~state o s < infty))
+              Helpers.distance_from_origin ~infty ~state o s < infty))
         state.origins
     in
     { state with origins }
 
-  let captures_rule state =
+  (* We can fill the captures field for every piece based on the minimum
+     distance from its candidate origins, since distance measures number
+     of captures necessary to navigate over the mobility graph. *)
+  let captures_lower_bound_rule state =
     let infty = 16 in
     let captures =
       SquareMap.mapi
         (fun s origins ->
           SquareSet.elements origins
-          |> List.map (fun o -> distance_to_origin ~infty ~state o s)
+          |> List.map (fun o -> Helpers.distance_from_origin ~infty ~state o s)
           |> List.fold_left min infty)
         state.origins
     in
     { state with captures }
 
+  (* The position is illegal if there are more captures required than
+     pieces off the board. *)
   let too_many_captures_rule state =
     let nb_white_captured, nb_black_captured =
       SquareMap.fold
@@ -369,9 +415,10 @@ module Rules = struct
       material_rule;
       origins_rule;
       refine_origins_rule;
-      mobility_rule;
-      paths_rule;
-      captures_rule;
+      static_mobility_rule;
+      pawn_on_3rd_rank_rule;
+      route_from_origin_rule;
+      captures_lower_bound_rule;
       too_many_captures_rule;
     ]
 

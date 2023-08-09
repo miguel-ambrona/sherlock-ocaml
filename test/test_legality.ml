@@ -154,7 +154,7 @@ module Internal = struct
           ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3", [], TBD);
         ]
 
-    let test_mobility_rule () =
+    let test_static_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
           let connected g s t = Mobility.distance ~infty:16 g s t < 16 in
@@ -163,7 +163,7 @@ module Internal = struct
           let static = List.filter bP_in_s Board.squares in
           let state = State.init pos in
           let state = { state with static = SquareSet.of_list static } in
-          let state = Rules.(apply state [ mobility_rule ]) in
+          let state = Rules.(apply state [ static_mobility_rule ]) in
           let p = Position.piece_at s pos |> Option.get in
           let g = PieceMap.find p state.mobility in
           assert (List.for_all (connected g s) reachable);
@@ -189,15 +189,15 @@ module Internal = struct
           ("8/8/3p2p1/6p1/3p2p1/8/5P2/8", f2, [ d5; a8; h5 ], [ c5; a7; h3 ]);
         ]
 
-    let test_paths_rule () =
+    let test_route_from_origin_rule () =
       let rules =
         Rules.
           [
             static_rule;
             origins_rule;
             refine_origins_rule;
-            mobility_rule;
-            paths_rule;
+            static_mobility_rule;
+            route_from_origin_rule;
           ]
       in
       List.iter
@@ -217,16 +217,16 @@ module Internal = struct
           ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
         ]
 
-    let test_captures_rule () =
+    let test_captures_lbound_rule () =
       let rules =
         Rules.
           [
             static_rule;
             origins_rule;
             refine_origins_rule;
-            mobility_rule;
-            paths_rule;
-            captures_rule;
+            static_mobility_rule;
+            route_from_origin_rule;
+            captures_lower_bound_rule;
           ]
       in
       List.iter
@@ -251,9 +251,9 @@ module Internal = struct
             static_rule;
             origins_rule;
             refine_origins_rule;
-            mobility_rule;
-            paths_rule;
-            captures_rule;
+            static_mobility_rule;
+            route_from_origin_rule;
+            captures_lower_bound_rule;
             too_many_captures_rule;
           ]
       in
@@ -276,10 +276,10 @@ module Internal = struct
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
-          test_case "mobility_rule" `Quick test_mobility_rule;
-          test_case "paths_rule" `Quick test_paths_rule;
-          test_case "captures_rule" `Quick test_captures_rule;
-          test_case "enough_captures_rule" `Quick test_too_many_captures_rule;
+          test_case "static_mobility_rule" `Quick test_static_mobility_rule;
+          test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
+          test_case "captures_lbound_rule" `Quick test_captures_lbound_rule;
+          test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
         ]
   end
 end
