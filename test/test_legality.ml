@@ -218,6 +218,35 @@ module Internal = struct
           ("8/8/3p2p1/6p1/3p2p1/8/5P2/8", f2, [ d5; a8; h5 ], [ c5; a7; h3 ]);
         ]
 
+    let test_pawn_on_3rd_rank_rule () =
+      let rules =
+        Rules.[ origins_rule; refine_origins_rule; pawn_on_3rd_rank_rule ]
+      in
+      let lacks_edge g (s, t) =
+        try
+          ignore @@ Mobility.G.find_edge g s t;
+          false
+        with Not_found -> true
+      in
+      List.iter
+        (fun (fen, c, connections) ->
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
+          let state = Rules.(apply (State.init pos) rules) in
+          PieceMap.iter
+            (fun p g ->
+              if p <> Piece.cP c then
+                assert (List.for_all (lacks_edge g) connections))
+            state.mobility)
+        Square.
+          [
+            ( "4k3/8/8/8/8/1P3P2/P1PPPP1P/4K3",
+              Color.white,
+              [ (b1, b5); (b2, b3); (b8, b2); (h1, f3); (f3, g2); (a8, h1) ] );
+            ( "4k3/pp1pppp1/3p3p/8/8/8/8/4K3",
+              Color.black,
+              [ (b8, f4); (c7, d6); (d6, c7); (h2, b8); (h3, h8); (h7, h6) ] );
+          ]
+
     let test_route_from_origin_rule () =
       let rules =
         Rules.
@@ -306,6 +335,7 @@ module Internal = struct
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
           test_case "static_mobility_rule" `Quick test_static_mobility_rule;
+          test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
           test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
           test_case "captures_lbound_rule" `Quick test_captures_lbound_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
