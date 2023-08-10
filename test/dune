@@ -1,6 +1,6 @@
 (copy_files ../src/{*.ml})
 
 (tests
- (names test_color test_board test_position test_legality)
+ (names test_color test_board test_position test_legality test_compositions)
  (package sherlock)
  (libraries chess alcotest))
