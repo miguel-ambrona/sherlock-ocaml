@@ -27,6 +27,7 @@ type t = White | Black
 let white = White
 let black = Black
 let equal = ( = )
+let compare = compare
 let is_white = equal White
 let is_black = equal Black
 let negate = function White -> Black | Black -> White

@@ -167,4 +167,8 @@ let board pos = pos.board
 let pieces pos = Board.to_pieces pos.board
 let white_pieces pos = List.filter (fun (p, _) -> Piece.is_white p) (pieces pos)
 let black_pieces pos = List.filter (fun (p, _) -> Piece.is_black p) (pieces pos)
+
+let color_pieces c pos =
+  if Color.is_white c then white_pieces pos else black_pieces pos
+
 let initial = of_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"

@@ -328,6 +328,39 @@ module Internal = struct
           ("3qk1B1/ppppppp1/7p/8/P7/5P1P/P3P1P1/4K3", TBD);
         ]
 
+    let test_missing_rule () =
+      let open Square in
+      List.iter
+        (fun (fen, expected_definites, expected_candidates, not_missing) ->
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
+          let state = Rules.(apply (State.init pos) all_rules) in
+          let white = ColorMap.find Color.White state.missing in
+          let black = ColorMap.find Color.Black state.missing in
+          let definite = SquareSet.union white.definite black.definite in
+          let candidates = SquareSet.union white.candidates black.candidates in
+          let is_definite s = SquareSet.mem s definite in
+          Debug.print_state state;
+          let is_candidate s = SquareSet.mem s candidates in
+          assert (List.for_all is_definite expected_definites);
+          assert (List.for_all is_candidate expected_candidates);
+          assert (List.for_all (Fun.negate is_definite) not_missing);
+          assert (List.for_all (Fun.negate is_candidate) not_missing))
+        [
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", [], [], Board.squares);
+          ("r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", [], [ b8; g8 ], []);
+          ("r1bqkb1r/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", [ b8; g8 ], [], []);
+          ("4k3/8/8/8/8/8/PPPPPPPP/1N1QKBNR", [ a1; c1 ], [], [ e8; h1 ]);
+          ("4k3/8/8/8/P7/1P6/2P5/4K3", [ d2; d1 ], [], [ a2; b2; c2 ]);
+          ("4k3/8/8/8/P7/1PP5/8/4K3", [], [ a2; b2; c2 ], []);
+          ("r3k2r/ppp2ppp/8/8/8/8/8/4K3", [], [ a8; d7; e7; h8 ], []);
+          ("3qk3/8/8/P7/P7/2P5/1P6/4K3", [ e2 ], [], [ a2 ]);
+          ("1n2k3/p1pppppp/2p5/8/6B1/2P5/1P1PPPPP/RNBQK1NR", [ f1 ], [], [ a2 ]);
+          ( "r2qk1nr/pp2pppp/1pp5/8/5P2/6P1/PPPP2PP/R1BQK1NR",
+            [ f8; c8; f1 ],
+            [ b8; g8; b1; g1 ],
+            [] );
+        ]
+
     let tests =
       Alcotest.
         [
@@ -339,6 +372,7 @@ module Internal = struct
           test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
           test_case "captures_lbound_rule" `Quick test_captures_lbound_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
+          test_case "test_missing_rule" `Quick test_missing_rule;
         ]
   end
 end
