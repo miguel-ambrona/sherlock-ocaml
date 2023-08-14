@@ -500,11 +500,7 @@ module Rules = struct
     ]
 
   let rec apply state rules =
-    let rec aux state = function
-      | [] -> state
-      | rule :: rules -> aux (rule state) rules
-    in
-    let new_state = aux state rules in
+    let new_state = List.fold_left (fun s r -> r s) state rules in
     if State.equal state new_state then state else apply new_state rules
 end
 
