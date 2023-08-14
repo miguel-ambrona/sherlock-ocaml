@@ -252,7 +252,7 @@ end
 
 module SquareMap = Map.Make (Square)
 
-(* A board is implemented as a map from squares to pieces *)
+(* A board is implemented as a map from squares to pieces. *)
 type t = Piece.t SquareMap.t
 
 let equal = SquareMap.equal Piece.equal
