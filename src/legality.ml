@@ -28,8 +28,21 @@ module Direction = Board.Direction
 module SquareSet = Set.Make (Square)
 module SquareMap = Map.Make (Square)
 module PieceMap = Map.Make (Piece)
+module ColorMap = Map.Make (Color)
 
 module State = struct
+  (* Type to reason about sets of squares that are not completely determined.
+       - cardinal   : indicates the number of elements in the set.
+       - definite   : is a set of squares that are definitely in the set.
+       - candidates : is a set of squares that may be in the set.
+     Squares that are not in definite nor in candidates are definitely not in
+     the set. *)
+  type uncertain_square_set = {
+    cardinal : int;
+    definite : SquareSet.t;
+    candidates : SquareSet.t;
+  }
+
   (* Proof state, containing all the information derived about the legality
      of the position of interest:
        - pos      : the position being analyzed.
@@ -40,11 +53,11 @@ module State = struct
        - captures : lower bound on the number of captures performed by pieces
                     that are still on the board. For example, [a4 -> 2] means
                     that the piece currently on a4 has captures at least twice.
-                    squares and arrows indicate the possible moves the piece
-                    of interest may have performed during the game.
        - mobility : map from pieces to mobility graphs (graphs where nodes are
                     squares and arrows indicate the possible moves the piece
-                    of interest may have performed during the game.
+                    of interest may have performed during the game).
+       - missing  : map from colors to the set of candidate missing pieces of
+                    that color, represented by the square where they started.
        - illegal  : flag indicating whether the position has been proven illegal
                     ("false" does not necessarily mean the position is legal).
   *)
@@ -54,6 +67,7 @@ module State = struct
     origins : SquareSet.t SquareMap.t;
     captures : int SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
+    missing : uncertain_square_set ColorMap.t;
     illegal : bool;
   }
 
@@ -67,8 +81,28 @@ module State = struct
         PieceMap.of_seq
           (List.to_seq
           @@ List.map (fun p -> (p, Mobility.piece_graph p)) Piece.all_pieces);
+      missing =
+        List.map
+          (fun c ->
+            let rank1 = Board.Rank.relative 1 c |> Square.rank_squares in
+            let rank2 = Board.Rank.relative 2 c |> Square.rank_squares in
+            let usset =
+              {
+                cardinal = 16 - List.length (Position.color_pieces c pos);
+                definite = SquareSet.empty;
+                candidates = rank1 @ rank2 |> SquareSet.of_list;
+              }
+            in
+            (c, usset))
+          Color.[ White; Black ]
+        |> List.to_seq |> ColorMap.of_seq;
       illegal = false;
     }
+
+  let equal_uncertain_square_set s1 s2 =
+    s1.cardinal = s2.cardinal
+    && SquareSet.equal s1.definite s2.definite
+    && SquareSet.equal s1.candidates s2.candidates
 
   let equal s1 s2 =
     (* Our rules only remove edges, so diffs between graphs can be detected
@@ -79,6 +113,7 @@ module State = struct
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
     && SquareMap.equal Int.equal s1.captures s2.captures
+    && ColorMap.equal equal_uncertain_square_set s1.missing s2.missing
     && Bool.equal s1.illegal s2.illegal
 end
 
@@ -180,6 +215,15 @@ module Helpers = struct
           (Square.rank_squares (Board.Rank.relative 8 c))
         |> List.fold_left min infty
     | _ -> distance p_graph origin target
+
+  (* If the set cardinal matches the total number of possible elements,
+     we have found them all. *)
+  let update_uncertain_square_set (usset : State.uncertain_square_set) =
+    let all = SquareSet.union usset.definite usset.candidates in
+    let found_all = usset.cardinal = SquareSet.cardinal all in
+    let definite = if found_all then all else usset.definite in
+    let candidates = SquareSet.diff usset.candidates definite in
+    { usset with definite; candidates }
 end
 
 module Rules = struct
@@ -307,9 +351,25 @@ module Rules = struct
      cardinality k, then we can safely remove S from the candidate origins of
      any other piece. Furthermore, if |S| < k, the position is illegal. *)
   let refine_origins_rule state =
-    let remove_origins protected to_rm =
-      SquareMap.mapi (fun s ts ->
-          if SquareSet.mem s protected then ts else SquareSet.diff ts to_rm)
+    let remove_origins protected to_rm state =
+      let origins =
+        SquareMap.mapi
+          (fun s ts ->
+            if SquareSet.mem s protected then ts else SquareSet.diff ts to_rm)
+          state.origins
+      in
+      let missing =
+        ColorMap.map
+          (fun usset ->
+            { usset with candidates = SquareSet.diff usset.candidates to_rm })
+          state.missing
+      in
+      let illegal =
+        ColorMap.exists
+          (fun _ usset -> not SquareSet.(is_empty (inter usset.definite to_rm)))
+          state.missing
+      in
+      { state with origins; missing; illegal = state.illegal || illegal }
     in
     let groups =
       let is_white (s, _) = Position.white_piece_at s state.pos in
@@ -321,7 +381,7 @@ module Rules = struct
         let ids = SquareSet.of_list ids in
         match Int.compare (SquareSet.cardinal set) (SquareSet.cardinal ids) with
         | -1 -> { state with illegal = true }
-        | 0 -> { state with origins = remove_origins ids set state.origins }
+        | 0 -> remove_origins ids set state
         | _ -> state)
       state groups
 
@@ -409,6 +469,22 @@ module Rules = struct
     then { state with illegal = true }
     else state
 
+  (* The starting squares that do not appear in the origins of any piece on
+     the board are definitely the starting position of missing pieces. *)
+  let missing_rule state =
+    let used_origins =
+      SquareMap.fold (fun _ -> SquareSet.union) state.origins SquareSet.empty
+    in
+    let missing =
+      ColorMap.map
+        (fun usset ->
+          let new_definite = SquareSet.diff usset.candidates used_origins in
+          let definite = SquareSet.union usset.definite new_definite in
+          { usset with definite } |> Helpers.update_uncertain_square_set)
+        state.missing
+    in
+    { state with missing }
+
   let all_rules =
     [
       static_rule;
@@ -420,6 +496,7 @@ module Rules = struct
       route_from_origin_rule;
       captures_lower_bound_rule;
       too_many_captures_rule;
+      missing_rule;
     ]
 
   let rec apply state rules =

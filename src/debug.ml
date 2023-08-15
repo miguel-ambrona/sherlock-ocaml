@@ -72,6 +72,16 @@ let print_state (state : State.t) =
       (fun s n -> Matrix.add s (48 - 64 + n))
       state.captures Matrix.empty
   in
+  let missing_matrix (missing : State.uncertain_square_set) =
+    List.fold_left
+      (fun m s ->
+        if SquareSet.mem s missing.definite then Matrix.add s 24 m
+        else if SquareSet.mem s missing.candidates then Matrix.add s (-1) m
+        else m)
+      Matrix.empty Board.squares
+  in
+  let white_missing = ColorMap.find Color.White state.missing in
+  let black_missing = ColorMap.find Color.Black state.missing in
   Format.printf "\n\n\n";
   Format.printf ">> pos: %s\n" @@ Position.to_fen state.pos;
   Format.printf ">> proven illegal: %b\n" state.illegal;
@@ -93,4 +103,9 @@ let print_state (state : State.t) =
              (SquareSet.elements ts |> List.map Square.to_string)))
     state.origins;
   Format.printf ">> min_nb_captures:\n";
-  Matrix.print [ captures_matrix ]
+  Matrix.print [ captures_matrix ];
+  Format.printf ">> missing:\n";
+  Matrix.print [ missing_matrix white_missing; missing_matrix black_missing ];
+  Format.printf ">>     white (%d)          black (%d)\n" white_missing.cardinal
+    black_missing.cardinal;
+  Format.printf ">>\n"
