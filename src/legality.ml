@@ -46,7 +46,7 @@ module State = struct
   (* Proof state, containing all the information derived about the legality
      of the position of interest:
        - pos      : the position being analyzed.
-       - static   : set of squares where there is a piece that has never moved
+       - static   : set of squares where there is a piece that has never moved.
        - origins  : potential candidate origins of pieces that are still on the
                     board. For example, [a4 -> {a2, b2}] means that the piece
                     currently on a4 started the game in either a2 or b2.
@@ -194,7 +194,7 @@ module Helpers = struct
     let compare_cardinals s1 s2 = Int.compare (cardinal s1) (cardinal s2) in
     aux [] @@ List.sort (fun (_, s1) (_, s2) -> compare_cardinals s1 s2) sets
 
-  (* [distance_from_origin ~infty pos mobility o t is a lower bound on the
+  (* [distance_from_origin ~infty ~state o t] is a lower bound on the
      number of captures needed for the piece standing on t to have come from the
      original square o.
      If such path is impossible, this function returns infty. *)
@@ -234,7 +234,7 @@ module Rules = struct
      limited by static pieces are also static. *)
   let static_rule state =
     let open Square in
-    (* Static pieces due to castling rights *)
+    (* Static pieces due to castling rights. *)
     let castling_static =
       let cr = state.pos.castling_rights in
       List.filter_map
@@ -248,8 +248,8 @@ module Rules = struct
       |> List.concat
     in
     let is_static ~state s = SquareSet.mem s state.static in
-    (* Static marriage: king and queen are static if they are sourounded
-       by static pieces, even without castling rights enabled *)
+    (* Static marriage: king and queen are static if they are surrounded
+       by static pieces, even without castling rights enabled. *)
     let marriage_static =
       List.concat_map
         (fun (border, marriage) ->
@@ -264,7 +264,7 @@ module Rules = struct
       |> SquareSet.of_list
       |> SquareSet.union state.static
     in
-    (* Static pieces due to restricted movements *)
+    (* Static pieces due to restricted movements. *)
     List.fold_left
       (fun state (p, s) ->
         if List.for_all (is_static ~state) (Helpers.predecessors p s) then
@@ -385,7 +385,7 @@ module Rules = struct
         | _ -> state)
       state groups
 
-  (* If a piece is static, no piece has passed through its square *)
+  (* If a piece is static, no piece has passed through its square. *)
   let static_mobility_rule state =
     let remove_arrows_passing_through s g =
       let f o t = s <> o && s <> t && not (Square.aligned o s t) in
@@ -500,11 +500,7 @@ module Rules = struct
     ]
 
   let rec apply state rules =
-    let rec aux state = function
-      | [] -> state
-      | rule :: rules -> aux (rule state) rules
-    in
-    let new_state = aux state rules in
+    let new_state = List.fold_left (fun s r -> r s) state rules in
     if State.equal state new_state then state else apply new_state rules
 end
 

@@ -170,16 +170,17 @@ module Piece = struct
 end
 
 module Direction = struct
+  let ( >>= ) = Option.bind
   let rank1 = Rank.relative 1 Color.white
   let rank8 = Rank.relative 8 Color.white
   let north s = if Square.rank s = rank8 then None else Some (s + 8)
   let south s = if Square.rank s = rank1 then None else Some (s - 8)
   let east s = if Square.file s = File.h then None else Some (s + 1)
   let west s = if Square.file s = File.a then None else Some (s - 1)
-  let north_east s = Option.bind (north s) east
-  let north_west s = Option.bind (north s) west
-  let south_east s = Option.bind (south s) east
-  let south_west s = Option.bind (south s) west
+  let north_east s = north s >>= east
+  let north_west s = north s >>= west
+  let south_east s = south s >>= east
+  let south_west s = south s >>= west
 
   let diag_neighbors s =
     List.filter_map
@@ -191,14 +192,14 @@ module Direction = struct
 
   let knight_neighbors s =
     [
-      Option.bind (north_east s) north;
-      Option.bind (north_east s) east;
-      Option.bind (north_west s) north;
-      Option.bind (north_west s) west;
-      Option.bind (south_east s) south;
-      Option.bind (south_east s) east;
-      Option.bind (south_west s) south;
-      Option.bind (south_west s) west;
+      north_east s >>= north;
+      north_east s >>= east;
+      north_west s >>= north;
+      north_west s >>= west;
+      south_east s >>= south;
+      south_east s >>= east;
+      south_west s >>= south;
+      south_west s >>= west;
     ]
     |> List.filter_map Fun.id
 
@@ -206,15 +207,27 @@ module Direction = struct
 
   let pawn_forward_targets c s =
     let up = if Color.is_white c then north else south in
-    [
-      (if Square.in_relative_rank 2 c s then Option.bind (up s) up else None);
-      up s;
-      Option.bind (up s) east;
-      Option.bind (up s) west;
-    ]
-    |> List.filter_map Fun.id
+    if Square.in_relative_rank 1 c s then []
+    else
+      [
+        (if Square.in_relative_rank 2 c s then up s >>= up else None);
+        up s;
+        up s >>= east;
+        up s >>= west;
+      ]
+      |> List.filter_map Fun.id
 
-  let pawn_backward_targets c s = pawn_forward_targets (Color.negate c) s
+  let pawn_backward_targets c s =
+    let down = if Color.is_white c then south else north in
+    if Square.in_relative_rank 2 c s then []
+    else
+      [
+        (if Square.in_relative_rank 4 c s then down s >>= down else None);
+        down s;
+        down s >>= east;
+        down s >>= west;
+      ]
+      |> List.filter_map Fun.id
 end
 
 module Bitboard = struct
@@ -239,7 +252,7 @@ end
 
 module SquareMap = Map.Make (Square)
 
-(* A board is implemented as a map from squares to pieces *)
+(* A board is implemented as a map from squares to pieces. *)
 type t = Piece.t SquareMap.t
 
 let equal = SquareMap.equal Piece.equal

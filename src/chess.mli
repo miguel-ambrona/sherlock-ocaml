@@ -104,7 +104,7 @@ module Board : sig
     (** [equal r1 r2] returns [true] iff ranks [r1] and [r2] are the same. *)
 
     val relative : int -> Color.t -> t
-    (** [relative i c] returns the i-th relative rank from the perpective
+    (** [relative i c] returns the i-th relative rank from the perspective
         of the player holding the pieces of color [c].
         @raise Invalid_argument if [i] is not an integer in the range 1--8. *)
 
@@ -134,7 +134,7 @@ module Board : sig
     (** [equal s1 s2] returns [true] iff squares [s1] and [s2] are the same. *)
 
     val of_file_and_rank : File.t -> Rank.t -> t
-    (** [of_file_and_rank f r] is the square at file [f] and rank [r] *)
+    (** [of_file_and_rank f r] is the square at file [f] and rank [r]. *)
 
     val of_string : string -> t
     (** [of_string str] converts string [str] into a square parsing it in
@@ -147,7 +147,7 @@ module Board : sig
 
     val in_relative_rank : int -> Color.t -> t -> bool
     (** [in_relative_rank i c s] returns [true] iff square [s] is in the i-th
-        relative rank from the perpective of the player holding the pieces
+        relative rank from the perspective of the player holding the pieces
         of color [c].
         @raise Invalid_argument if [i] is not an integer in the range 1--8. *)
 
