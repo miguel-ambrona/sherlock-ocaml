@@ -118,7 +118,7 @@ module State = struct
 end
 
 module Helpers = struct
-  let predecessors piece s =
+  let predecessors ?(captures_only = false) piece s =
     let open Direction in
     match Piece.piece_type piece with
     | King | Queen -> diag_neighbors s @ straight_neighbors s
@@ -126,14 +126,9 @@ module Helpers = struct
     | Bishop -> diag_neighbors s
     | Knight -> knight_neighbors s
     | Pawn ->
-        if Square.in_relative_rank 2 (Piece.color piece) s then []
-        else
-          let dirs =
-            if Color.is_white (Piece.color piece) then
-              [ south_west; south; south_east ]
-            else [ north_west; north; north_east ]
-          in
-          List.filter_map (fun dir -> dir s) dirs
+        pawn_backward_targets (Piece.color piece) s
+        |> List.filter (fun t ->
+               (not captures_only) || Square.file s <> Square.file t)
 
   let pawn_candidate_origins color s =
     let snd_rank = Board.Rank.relative 2 color in
@@ -398,6 +393,22 @@ module Rules = struct
     in
     { state with mobility }
 
+  (* Every piece that has checked a static king must have been captured, thus
+     we can disable arrows that move from squares that check a static king. *)
+  let static_king_rule state =
+    let remove_edges_from g s = Mobility.filter_edges (fun o _ -> o <> s) g in
+    let mobility =
+      PieceMap.mapi
+        (fun p g ->
+          let king_square = if Piece.is_white p then Square.e8 else Square.e1 in
+          if not (SquareSet.mem king_square state.static) then g
+          else
+            Helpers.predecessors ~captures_only:true p king_square
+            |> List.fold_left remove_edges_from g)
+        state.mobility
+    in
+    { state with mobility }
+
   (* If a pawn on the 3rd rank, say on square s, has a single candidate origin,
      say o, it is the only piece on the board that can possibly have moved
      across the squares s <-> o. For example, if a pawn on b3 comes from b2,
@@ -492,6 +503,7 @@ module Rules = struct
       origins_rule;
       refine_origins_rule;
       static_mobility_rule;
+      static_king_rule;
       pawn_on_3rd_rank_rule;
       route_from_origin_rule;
       captures_lower_bound_rule;
