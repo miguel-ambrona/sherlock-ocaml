@@ -85,6 +85,20 @@ module SmullyanCompositions = struct
       ]
 end
 
+module RuleSpecificCompositions = struct
+  let test_static_king () =
+    let fen = "r3k3/ppp1p1pp/8/8/8/8/8/R1R1K2R w KQq - 0 1" in
+    let state = Rules.(apply (State.init @@ Position.of_fen fen) all_rules) in
+    Debug.print_state state;
+    assert state.illegal
+
+  let tests = Alcotest.[ test_case "static_king" `Quick test_static_king ]
+end
+
 let () =
   let open Alcotest in
-  run "Compositions" [ ("Smullyan", SmullyanCompositions.tests) ]
+  run "Compositions"
+    [
+      ("Smullyan", SmullyanCompositions.tests);
+      ("Experimental", RuleSpecificCompositions.tests);
+    ]

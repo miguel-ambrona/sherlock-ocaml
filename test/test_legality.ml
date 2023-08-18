@@ -32,6 +32,12 @@ module Internal = struct
     | Illegal -> assert state.illegal
     | TBD -> assert (not state.illegal)
 
+  let lacks_edge g (s, t) =
+    try
+      ignore @@ Mobility.G.find_edge g s t;
+      false
+    with Not_found -> true
+
   module TestHelpers = struct
     let test_pawn_candidate_origins () =
       List.iter
@@ -218,15 +224,36 @@ module Internal = struct
           ("8/8/3p2p1/6p1/3p2p1/8/5P2/8", f2, [ d5; a8; h5 ], [ c5; a7; h3 ]);
         ]
 
+    let test_static_king_rule () =
+      let open Piece in
+      let open Square in
+      let rules = Rules.[ static_rule; static_king_rule ] in
+      let pos = Position.of_fen "r3k3/8/8/8/8/8/8/4K3 w q - 0 1" in
+      let state = Rules.(apply (State.init pos) rules) in
+      let missing_edge (p, s, t) =
+        lacks_edge (PieceMap.find p state.mobility) (s, t)
+      in
+      let wP_not = [ (wP, d7, d8); (wP, d7, c8); (wP, f7, f8); (wP, f7, g8) ] in
+      let wP_yes = [ (wP, e7, d8); (wP, e7, f8); (wP, e6, d7); (wP, f6, f7) ] in
+      let wN_not = [ (wN, f6, h5); (wN, d6, c8); (wN, c7, a8); (wN, g7, f5) ] in
+      let wN_yes = [ (wN, h5, f6); (wN, c8, d6); (wN, f3, h2); (wN, c2, a3) ] in
+      let wB_not = [ (wB, d7, c8); (wB, d7, e6); (wB, f7, g8); (wB, f7, h5) ] in
+      let wB_yes = [ (wB, c8, d7); (wB, e6, d7); (wB, g8, f7); (wB, f2, g3) ] in
+      let wR_not = [ (wR, e7, f7); (wR, f8, h8); (wR, f8, f1); (wR, d8, d6) ] in
+      let wR_yes = [ (wR, f7, e7); (wR, h8, f8); (wR, f1, f8); (wR, d1, d8) ] in
+      let wQ_not = [ (wQ, d7, a7); (wQ, d8, e7); (wQ, f8, f6); (wQ, f7, f1) ] in
+      let wQ_yes = [ (wQ, a7, d7); (wQ, d1, d8); (wQ, f1, f8); (wQ, f1, f7) ] in
+      (* let wK_not = [ (wK, d7, d6); (wK, d8, c8); (wK, f6, f7); (wK, d6, e7) ] in *)
+      (* let wK_yes = [ (wK, e2, e3); (wK, e1, e2); (wK, f5, g6); (wK, h8, g8) ] in *)
+      let white_not = wP_not @ wN_not @ wB_not @ wR_not @ wQ_not in
+      let white_yes = wP_yes @ wN_yes @ wB_yes @ wR_yes @ wQ_yes in
+      (* assert (Mobility.G.is_empty @@ PieceMap.find bK state.mobility); *)
+      assert (List.for_all missing_edge white_not);
+      assert (not @@ List.exists missing_edge white_yes)
+
     let test_pawn_on_3rd_rank_rule () =
       let rules =
         Rules.[ origins_rule; refine_origins_rule; pawn_on_3rd_rank_rule ]
-      in
-      let lacks_edge g (s, t) =
-        try
-          ignore @@ Mobility.G.find_edge g s t;
-          false
-        with Not_found -> true
       in
       List.iter
         (fun (fen, c, connections) ->
@@ -368,6 +395,7 @@ module Internal = struct
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
           test_case "static_mobility_rule" `Quick test_static_mobility_rule;
+          test_case "static_king_rule" `Quick test_static_king_rule;
           test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
           test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
           test_case "captures_lbound_rule" `Quick test_captures_lbound_rule;
