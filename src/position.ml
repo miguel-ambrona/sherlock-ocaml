@@ -164,11 +164,45 @@ let to_fen pos =
     ]
 
 let board pos = pos.board
+let turn pos = pos.turn
+let en_passant pos = pos.en_passant
 let pieces pos = Board.to_pieces pos.board
 let white_pieces pos = List.filter (fun (p, _) -> Piece.is_white p) (pieces pos)
 let black_pieces pos = List.filter (fun (p, _) -> Piece.is_black p) (pieces pos)
 
 let color_pieces c pos =
   if Color.is_white c then white_pieces pos else black_pieces pos
+
+let available_castling pos king_target =
+  let cr = pos.castling_rights in
+  if king_target = Square.c1 then cr.white_long
+  else if king_target = Square.g1 then cr.white_short
+  else if king_target = Square.c8 then cr.black_long
+  else if king_target = Square.g8 then cr.black_short
+  else raise @@ Invalid_argument "Invalid king target square"
+
+let is_attacked pos c s =
+  let open Direction in
+  let rec ray_collisions = function
+    | [] -> None
+    | s :: ray ->
+        if Option.is_some @@ piece_at s pos then Some s else ray_collisions ray
+  in
+
+  let straight_attackers = List.filter_map ray_collisions (rook_rays s) in
+  let diagonal_attackers = List.filter_map ray_collisions (bishop_rays s) in
+  let find p = List.exists (fun t -> piece_at t pos = Some p) in
+  find (Piece.cK c) (king_neighbors s)
+  || find (Piece.cQ c) (straight_attackers @ diagonal_attackers)
+  || find (Piece.cR c) straight_attackers
+  || find (Piece.cB c) diagonal_attackers
+  || find (Piece.cN c) (knight_neighbors s)
+  || find (Piece.cP c) (pawn_capture_targets (Color.negate c) s)
+
+let is_check pos =
+  match Board.find_pieces (Piece.cK pos.turn) pos.board with
+  | [ king_sq ] -> is_attacked pos (Color.negate pos.turn) king_sq
+  | _ ->
+      raise @@ Invalid_argument "There must be exactly one king of each color"
 
 let initial = of_fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
