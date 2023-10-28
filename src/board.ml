@@ -106,6 +106,8 @@ module Square = struct
     && d2 <= d1 && d2 <= d3
 end
 
+module SquareMap = Map.Make (Square)
+
 module Piece = struct
   type piece_type = King | Queen | Rook | Bishop | Knight | Pawn
   type t = { piece_type : piece_type; piece_color : Color.t }
@@ -139,6 +141,11 @@ module Piece = struct
   let bN = make Color.black knight
   let bP = make Color.black pawn
   let all_pieces = [ wK; wQ; wR; wB; wN; wP; bK; bQ; bR; bB; bN; bP ]
+  let cK c = make c king
+  let cQ c = make c queen
+  let cR c = make c rook
+  let cB c = make c bishop
+  let cN c = make c knight
   let cP c = make c pawn
 
   let piece_type_of_char c =
@@ -181,6 +188,8 @@ module Direction = struct
   let north_west s = north s >>= west
   let south_east s = south s >>= east
   let south_west s = south s >>= west
+  let relative_north c = if Color.is_white c then north else south
+  let relative_south c = relative_north (Color.negate c)
 
   let diag_neighbors s =
     List.filter_map
@@ -205,17 +214,19 @@ module Direction = struct
 
   let king_neighbors s = diag_neighbors s @ straight_neighbors s
 
-  let pawn_forward_targets c s =
+  let pawn_push_targets c s =
     let up = if Color.is_white c then north else south in
     if Square.in_relative_rank 1 c s then []
     else
-      [
-        (if Square.in_relative_rank 2 c s then up s >>= up else None);
-        up s;
-        up s >>= east;
-        up s >>= west;
-      ]
+      [ (if Square.in_relative_rank 2 c s then up s >>= up else None); up s ]
       |> List.filter_map Fun.id
+
+  let pawn_capture_targets c s =
+    let up = if Color.is_white c then north else south in
+    [ up s >>= east; up s >>= west ] |> List.filter_map Fun.id
+
+  let pawn_forward_targets c s =
+    pawn_push_targets c s @ pawn_capture_targets c s
 
   let pawn_backward_targets c s =
     let down = if Color.is_white c then south else north in
@@ -228,6 +239,28 @@ module Direction = struct
         down s >>= west;
       ]
       |> List.filter_map Fun.id
+
+  let rook_directions = [ north; south; east; west ]
+  let bishop_directions = [ north_east; north_west; south_east; south_west ]
+  let queen_directions = rook_directions @ bishop_directions
+
+  let build_rays directions =
+    let rec build_ray dir s =
+      match dir s with None -> [] | Some t -> t :: build_ray dir t
+    in
+    List.fold_left
+      (fun acc s ->
+        let rays = List.map (fun dir -> build_ray dir s) directions in
+        let rays = List.filter (fun ray -> ray <> []) rays in
+        SquareMap.add s rays acc)
+      SquareMap.empty (List.init 64 Fun.id)
+
+  let queen_rays_map = build_rays queen_directions
+  let rook_rays_map = build_rays rook_directions
+  let bishop_rays_map = build_rays bishop_directions
+  let queen_rays s = SquareMap.find s queen_rays_map
+  let rook_rays s = SquareMap.find s rook_rays_map
+  let bishop_rays s = SquareMap.find s bishop_rays_map
 end
 
 module Bitboard = struct
@@ -249,8 +282,6 @@ module Bitboard = struct
 
   let print_bb bb = Format.printf "%s\n" @@ to_string bb
 end
-
-module SquareMap = Map.Make (Square)
 
 (* A board is implemented as a map from squares to pieces. *)
 type t = Piece.t SquareMap.t
