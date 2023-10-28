@@ -1,3 +1,5 @@
+![Sherlock Holmes with City Background](/images/sherlock.png "Sherlock")
+
 # Sherlock
 
 A chess library written in OCaml, oriented to creating and solving chess
