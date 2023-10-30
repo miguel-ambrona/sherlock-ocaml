@@ -1,5 +1,5 @@
 (library
  (public_name sherlock)
  (name chess)
- (modules chess color board position move mobility legality debug)
+ (modules chess color board position move retraction mobility legality debug)
  (libraries ocamlgraph))

@@ -60,7 +60,7 @@ let is_en_passant pos m =
 
 let is_double_push pos m =
   Piece.piece_type (moved_piece pos m) = Piece.pawn
-  && abs (Square.rank m.source - Square.rank m.target) = 2
+  && Square.king_distance m.source m.target = 2
 
 let is_capture pos m =
   Option.is_some (Position.piece_at m.target pos) || is_en_passant pos m
@@ -113,8 +113,9 @@ let apply pos m =
         black_long = cr.black_long && find bK e8 && find bR a8;
       }
   in
-  let increase_halfmove_clock n =
-    if is_capture pos m || Piece.piece_type p = Piece.pawn then 0 else n + 1
+  let increase_halfmove_clock n_opt =
+    if is_capture pos m || Piece.piece_type p = Piece.pawn then Some 0
+    else Option.map (fun n -> n + 1) n_opt
   in
   Position.
     {
@@ -122,7 +123,7 @@ let apply pos m =
       turn = Color.negate pos.turn;
       en_passant = (if is_double_push pos m then ep_square else None);
       castling_rights;
-      halfmove_clock = Option.map increase_halfmove_clock pos.halfmove_clock;
+      halfmove_clock = increase_halfmove_clock pos.halfmove_clock;
       fullmove_number = (pos.fullmove_number + if Color.is_black c then 1 else 0);
     }
 

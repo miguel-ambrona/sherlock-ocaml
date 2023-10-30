@@ -189,7 +189,13 @@ module Direction = struct
   let south_east s = south s >>= east
   let south_west s = south s >>= west
   let relative_north c = if Color.is_white c then north else south
-  let relative_south c = relative_north (Color.negate c)
+  let relative_south c = if Color.is_white c then south else north
+  let north_exn s = Option.get @@ north s
+  let south_exn s = Option.get @@ south s
+  let east_exn s = Option.get @@ east s
+  let west_exn s = Option.get @@ west s
+  let relative_north_exn c s = Option.get @@ relative_north c s
+  let relative_south_exn c s = Option.get @@ relative_south c s
 
   let diag_neighbors s =
     List.filter_map
@@ -228,17 +234,23 @@ module Direction = struct
   let pawn_forward_targets c s =
     pawn_push_targets c s @ pawn_capture_targets c s
 
-  let pawn_backward_targets c s =
-    let down = if Color.is_white c then south else north in
+  let pawn_unpush_sources c s =
+    let down = relative_south c in
     if Square.in_relative_rank 2 c s then []
     else
       [
         (if Square.in_relative_rank 4 c s then down s >>= down else None);
         down s;
-        down s >>= east;
-        down s >>= west;
       ]
       |> List.filter_map Fun.id
+
+  let pawn_uncapture_sources c s =
+    let down = relative_south c in
+    if Square.in_relative_rank 2 c s then []
+    else [ down s >>= east; down s >>= west ] |> List.filter_map Fun.id
+
+  let pawn_backward_sources c s =
+    pawn_unpush_sources c s @ pawn_uncapture_sources c s
 
   let rook_directions = [ north; south; east; west ]
   let bishop_directions = [ north_east; north_west; south_east; south_west ]
