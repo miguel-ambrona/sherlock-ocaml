@@ -126,7 +126,7 @@ module Helpers = struct
     | Bishop -> diag_neighbors s
     | Knight -> knight_neighbors s
     | Pawn ->
-        pawn_backward_targets (Piece.color piece) s
+        pawn_backward_sources (Piece.color piece) s
         |> List.filter (fun t ->
                (not captures_only) || Square.file s <> Square.file t)
 
