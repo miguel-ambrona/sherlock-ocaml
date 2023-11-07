@@ -269,7 +269,9 @@ module Internal = struct
     let test_static_king_rule () =
       let open Piece in
       let open Square in
-      let rules = Rules.[ static_rule; static_king_rule ] in
+      let rules =
+        Rules.[ static_rule; static_king_rule; refine_static_king_rule ]
+      in
       let pos = Position.of_fen "r3k3/8/8/8/8/8/8/4K3 w q - 0 1" in
       let state = Rules.(apply (State.init pos) rules) in
       let missing_edge (p, s, t) =
@@ -285,11 +287,11 @@ module Internal = struct
       let wR_yes = [ (wR, f7, e7); (wR, h8, f8); (wR, f1, f8); (wR, d1, d8) ] in
       let wQ_not = [ (wQ, d7, a7); (wQ, d8, e7); (wQ, f8, f6); (wQ, f7, f1) ] in
       let wQ_yes = [ (wQ, a7, d7); (wQ, d1, d8); (wQ, f1, f8); (wQ, f1, f7) ] in
-      (* let wK_not = [ (wK, d7, d6); (wK, d8, c8); (wK, f6, f7); (wK, d6, e7) ] in *)
-      (* let wK_yes = [ (wK, e2, e3); (wK, e1, e2); (wK, f5, g6); (wK, h8, g8) ] in *)
-      let white_not = wP_not @ wN_not @ wB_not @ wR_not @ wQ_not in
-      let white_yes = wP_yes @ wN_yes @ wB_yes @ wR_yes @ wQ_yes in
-      (* assert (Mobility.G.is_empty @@ PieceMap.find bK state.mobility); *)
+      let wK_not = [ (wK, d7, d6); (wK, d8, c8); (wK, f6, f7); (wK, d6, e7) ] in
+      let wK_yes = [ (wK, e2, e3); (wK, e1, e2); (wK, f5, g6); (wK, h8, g8) ] in
+      let white_not = wP_not @ wN_not @ wB_not @ wR_not @ wQ_not @ wK_not in
+      let white_yes = wP_yes @ wN_yes @ wB_yes @ wR_yes @ wQ_yes @ wK_yes in
+      assert (Mobility.G.is_empty @@ PieceMap.find bK state.mobility);
       assert (List.for_all missing_edge white_not);
       assert (not @@ List.exists missing_edge white_yes)
 

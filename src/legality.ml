@@ -600,15 +600,34 @@ module Rules = struct
   (* Every piece that has checked a static king must have been captured, thus
      we can disable arrows that move from squares that check a static king. *)
   let static_king_rule state =
-    let remove_edges_from g s = Mobility.filter_edges (fun o _ -> o <> s) g in
     let mobility =
       PieceMap.mapi
         (fun p g ->
           let king_square = if Piece.is_white p then Square.e8 else Square.e1 in
           if not (SquareSet.mem king_square state.static) then g
           else
+            let remove_edges g s =
+              if Piece.piece_type p = King then
+                Mobility.filter_edges (fun o t -> o <> s && t <> s) g
+              else Mobility.filter_edges (fun o _ -> o <> s) g
+            in
             Helpers.predecessors ~captures_only:true p king_square
-            |> List.fold_left remove_edges_from g)
+            |> List.fold_left remove_edges g)
+        state.mobility
+    in
+    { state with mobility }
+
+  (* If the king is static we can empty its mobility graph. *)
+  let refine_static_king_rule state =
+    let mobility =
+      PieceMap.mapi
+        (fun p g ->
+          let king_square = if Piece.is_white p then Square.e1 else Square.e8 in
+          if
+            (not (SquareSet.mem king_square state.static))
+            || Piece.piece_type p <> King
+          then g
+          else Mobility.G.empty)
         state.mobility
     in
     { state with mobility }
@@ -895,6 +914,7 @@ module Rules = struct
       knight_origins_rule;
       static_mobility_rule;
       static_king_rule;
+      refine_static_king_rule;
       pawn_on_3rd_rank_rule;
       route_from_origin_rule;
       captures_rule;
