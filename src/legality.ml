@@ -52,7 +52,7 @@ module State = struct
                     currently on a4 started the game in either a2 or b2.
        - captures : lower bound on the number of captures performed by pieces
                     that are still on the board. For example, [a4 -> 2] means
-                    that the piece currently on a4 has captures at least twice.
+                    that the piece currently on a4 has captured at least twice.
        - mobility : map from pieces to mobility graphs (graphs where nodes are
                     squares and arrows indicate the possible moves the piece
                     of interest may have performed during the game).
@@ -219,6 +219,35 @@ module Helpers = struct
     let definite = if found_all then all else usset.definite in
     let candidates = SquareSet.diff usset.candidates definite in
     { usset with definite; candidates }
+
+  (* Returns a lower bound on the number of captures by White (respectively by
+     Black) to reach the structure of the current position. Obviously, the
+     actual number of captures is the number of missing pices, but here we
+     attend to the captures that are necessary for piece mobility, e.g., a pawn
+     which moved diagonally requires captures for doing so. *)
+  let structural_necessary_captures (state : State.t) =
+    SquareMap.fold
+      (fun s n (acc_w, acc_b) ->
+        if Position.white_piece_at s state.pos then (acc_w + n, acc_b)
+        else (acc_w, acc_b + n))
+      state.captures (0, 0)
+
+  (* Create a map from squares to integers. Binding [s -> n] means that the
+     piece currently on square s has performed at most n captures. This number
+     is computed based on the number of missing pieces and the number of
+     necessary captures for the mobility of some pawns. *)
+  let build_nb_affordable_captures_map (state : State.t) =
+    let nb_white_missing = 16 - List.length (Position.white_pieces state.pos) in
+    let nb_black_missing = 16 - List.length (Position.black_pieces state.pos) in
+    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
+      structural_necessary_captures state
+    in
+    SquareMap.mapi
+      (fun s n ->
+        if Position.white_piece_at s state.pos then
+          nb_black_missing - nb_necessary_captures_by_white + n
+        else nb_white_missing - nb_necessary_captures_by_black + n)
+      state.captures
 end
 
 module Rules = struct
@@ -440,11 +469,19 @@ module Rules = struct
   (* There must exist a path to a piece from any of its candidate origins. *)
   let route_from_origin_rule state =
     let infty = 16 in
+    let affordable_nb_captures_map =
+      Helpers.build_nb_affordable_captures_map state
+    in
     let origins =
       SquareMap.mapi
         (fun s ->
+          let bound =
+            match SquareMap.find_opt s affordable_nb_captures_map with
+            | None -> infty - 1
+            | Some b -> b
+          in
           SquareSet.filter (fun o ->
-              Helpers.distance_from_origin ~infty ~state o s < infty))
+              Helpers.distance_from_origin ~infty ~state o s <= bound))
         state.origins
     in
     { state with origins }
@@ -467,16 +504,14 @@ module Rules = struct
   (* The position is illegal if there are more captures required than
      pieces off the board. *)
   let too_many_captures_rule state =
-    let nb_white_captured, nb_black_captured =
-      SquareMap.fold
-        (fun s n (nb_w, nb_b) ->
-          if Position.white_piece_at s state.pos then (nb_w, nb_b + n)
-          else (nb_w + n, nb_b))
-        state.captures (0, 0)
+    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
+      Helpers.structural_necessary_captures state
     in
     let nb_white = List.length (Position.white_pieces state.pos) in
     let nb_black = List.length (Position.black_pieces state.pos) in
-    if nb_white_captured > 16 - nb_white || nb_black_captured > 16 - nb_black
+    if
+      nb_necessary_captures_by_black > 16 - nb_white
+      || nb_necessary_captures_by_white > 16 - nb_black
     then { state with illegal = true }
     else state
 

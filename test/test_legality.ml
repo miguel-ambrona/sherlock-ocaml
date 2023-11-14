@@ -283,6 +283,7 @@ module Internal = struct
             refine_origins_rule;
             static_mobility_rule;
             route_from_origin_rule;
+            captures_lower_bound_rule;
           ]
       in
       List.iter
@@ -297,9 +298,10 @@ module Internal = struct
         [
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR", [], Illegal);
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPP1P/RN1QKBNR", [], Illegal);
-          ("rnbqkbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR", [ (a3, g2) ], TBD);
+          ("r3kbnr/pppppp1p/6p1/8/8/B7/PPPPPP1P/RN1QKBNR", [ (a3, g2) ], TBD);
           ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPPP1P/RN1QKBNR", [], Illegal);
-          ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
+          ("r3k2r/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [], Illegal);
+          ("4k2r/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
         ]
 
     let test_captures_lower_bound_rule () =
@@ -344,7 +346,6 @@ module Internal = struct
         (fun (fen, legality) ->
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
-          Debug.print_state state;
           legality_assertion state legality)
         [
           ("3qk3/3ppp2/8/P6P/P6P/P6P/P6P/4K3", Illegal);
@@ -375,7 +376,6 @@ module Internal = struct
           let definite = SquareSet.union white.definite black.definite in
           let candidates = SquareSet.union white.candidates black.candidates in
           let is_definite s = SquareSet.mem s definite in
-          Debug.print_state state;
           let is_candidate s = SquareSet.mem s candidates in
           assert (List.for_all is_definite expected_definites);
           assert (List.for_all is_candidate expected_candidates);
@@ -413,6 +413,50 @@ module Internal = struct
           test_case "test_missing_rule" `Quick test_missing_rule;
         ]
   end
+
+  module TestSynergies = struct
+    let test_origins_with_captures_lower_bound () =
+      (* The starting origin squares can be further refined if we have into
+         account the number of missing pieces and the number of captures
+         that each specific piece can affort. *)
+      List.iter
+        (fun (fen, expected_origins) ->
+          let rules =
+            Rules.
+              [
+                static_rule;
+                origins_rule;
+                refine_origins_rule;
+                static_mobility_rule;
+                route_from_origin_rule;
+                captures_lower_bound_rule;
+              ]
+          in
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
+          let state = Rules.(apply (State.init pos) rules) in
+          let exists_pair (s, t) =
+            SquareMap.find_opt s state.origins = Some (SquareSet.singleton t)
+          in
+          assert (List.for_all exists_pair expected_origins))
+        [
+          ("rnbqkbnr/pppppppp/8/8/8/1PP5/P2PPPPP/RNBQKBNR", [ (b3, b2) ]);
+          ("rnbqkb1r/pppppppp/8/8/8/1PP4P/P2PPP1P/RNBQKBNR", [ (b3, b2) ]);
+          ("r1bqkb1r/pppppppp/8/8/8/1PP2P1P/P2P1P1P/RNBQKBNR", [ (b3, b2) ]);
+          ( "r2qk2r/p1pppp1p/1p2P1pP/8/8/6P1/1PPPPP2/RNBQKBNR",
+            [ (g3, g2); (e6, a2) ] );
+          ("rnbqkb1B/pppppp1p/6p1/8/P1P5/8/1P1PPPP1/RNBQKBNR", [ (a4, a2) ]);
+          ("r2qkb1B/p1pppp1p/1p4p1/8/P1P5/4P3/1P1PP1P1/RNBQKBNR", [ (a4, a2) ]);
+          ( "rnbqkbnr/pp5p/7p/2p4p/3p3p/8/1PPPPP2/1NBQKB2",
+            [ (d4, d7); (c5, c7) ] );
+        ]
+
+    let tests =
+      Alcotest.
+        [
+          test_case "test_origins_with_captures_lower_bound" `Quick
+            test_origins_with_captures_lower_bound;
+        ]
+  end
 end
 
 let () =
@@ -421,4 +465,5 @@ let () =
     [
       ("Helpers", Internal.TestHelpers.tests);
       ("Rules", Internal.TestRules.tests);
+      ("Synergies", Internal.TestSynergies.tests);
     ]
