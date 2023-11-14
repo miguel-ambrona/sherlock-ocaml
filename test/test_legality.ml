@@ -112,12 +112,43 @@ module Internal = struct
             ("8/1ppppppp/8/p7/8/8/8/7R", e2, h1, 4);
           ]
 
+    let test_distance_to_target () =
+      let infty = 1000 in
+      List.iter
+        (fun (fen, o, t, expected_distance) ->
+          let pos = Position.of_fen (fen ^ " w - - 0 1") in
+          let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
+          let static = List.filter bP_in_s Board.squares in
+          let state = State.init pos in
+          let state = { state with static = SquareSet.of_list static } in
+          let state = Rules.(apply state [ static_mobility_rule ]) in
+          let d = Helpers.distance_to_target ~infty ~state o t in
+          assert (d = expected_distance))
+        Square.
+          [
+            ("8/8/8/8/6p1/4pp2/8/8", f2, c5, 2);
+            ("8/8/8/8/6p1/4pp2/8/8", e2, c5, 1);
+            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, 0);
+            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, 0);
+            ("8/5p2/6pp/7p/5pp1/4pp2/8/8", f2, c5, 5);
+            ("2p5/ppp5/8/8/8/8/8/8", a8, b8, 0);
+            ("2p5/ppp5/8/8/8/8/8/8", a8, e8, infty);
+            ("2p5/ppp5/8/8/8/8/8/8", a1, a8, infty);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", e2, h8, 4);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, h8, infty);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, g8, 0);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", b1, g8, infty);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", a1, g8, infty);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", d1, g8, 0);
+          ]
+
     let tests =
       Alcotest.
         [
           test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
           test_case "k_groups" `Quick test_k_groups;
           test_case "distance_from_origin" `Quick test_distance_from_origin;
+          test_case "distance_to_target" `Quick test_distance_to_target;
         ]
   end
 
@@ -187,6 +218,30 @@ module Internal = struct
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RNBQKBNR", [], Illegal);
           ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3", [], Illegal);
           ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3", [], TBD);
+        ]
+
+    let test_destinies_rule () =
+      List.iter
+        (fun (fen, expected_destinies, not_expected_destinies) ->
+          let pos = Position.of_fen (fen ^ " ? 1") in
+          let state = Rules.(apply (State.init pos) Rules.all_rules) in
+          let destinies_match (s, ts) =
+            match SquareMap.find_opt s state.destinies with
+            | None -> false
+            | Some set -> SquareSet.(equal set (of_list ts))
+          in
+          let not_found (s, t) =
+            not @@ SquareSet.mem t (SquareMap.find s state.destinies)
+          in
+          assert (List.for_all destinies_match expected_destinies);
+          assert (List.for_all not_found not_expected_destinies))
+        [
+          ( "r2qk2r/pppppp2/1B6/4P3/4P3/1P2PB2/PRPPP3/1N1QK1NR w K -",
+            [ (a1, [ b2 ]); (c1, [ b6 ]); (c8, [ c8 ]) ],
+            [ (f8, b3); (f8, d2) ] );
+          ( "rnbqkbnr/pppppppp/8/8/8/P1PP4/1P2PPPP/1N1QKBNR w Kkq -",
+            [ (a1, [ a1; a2; b1; c1; c2; d1; d2 ]) ],
+            [] );
         ]
 
     let test_static_mobility_rule () =
