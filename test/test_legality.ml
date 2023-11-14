@@ -302,7 +302,7 @@ module Internal = struct
           ("rnbqkbnr/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
         ]
 
-    let test_captures_lbound_rule () =
+    let test_captures_lower_bound_rule () =
       let rules =
         Rules.
           [
@@ -310,7 +310,6 @@ module Internal = struct
             origins_rule;
             refine_origins_rule;
             static_mobility_rule;
-            route_from_origin_rule;
             captures_lower_bound_rule;
           ]
       in
@@ -337,7 +336,6 @@ module Internal = struct
             origins_rule;
             refine_origins_rule;
             static_mobility_rule;
-            route_from_origin_rule;
             captures_lower_bound_rule;
             too_many_captures_rule;
           ]
@@ -360,7 +358,18 @@ module Internal = struct
       List.iter
         (fun (fen, expected_definites, expected_candidates, not_missing) ->
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
-          let state = Rules.(apply (State.init pos) all_rules) in
+          let rules =
+            Rules.
+              [
+                static_rule;
+                origins_rule;
+                refine_origins_rule;
+                static_mobility_rule;
+                route_from_origin_rule;
+                missing_rule;
+              ]
+          in
+          let state = Rules.(apply (State.init pos) rules) in
           let white = ColorMap.find Color.White state.missing in
           let black = ColorMap.find Color.Black state.missing in
           let definite = SquareSet.union white.definite black.definite in
@@ -398,7 +407,8 @@ module Internal = struct
           test_case "static_king_rule" `Quick test_static_king_rule;
           test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
           test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
-          test_case "captures_lbound_rule" `Quick test_captures_lbound_rule;
+          test_case "captures_lower_bound_rule" `Quick
+            test_captures_lower_bound_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
           test_case "test_missing_rule" `Quick test_missing_rule;
         ]
