@@ -503,6 +503,32 @@ module Rules = struct
     in
     { state with destinies }
 
+  (* It is not possible to know with certainty whether a non-promoted white
+     knight came from b1 or g1. (In this legality analysis we do not have the
+     fullmove counter into account.) Consequently, we can assume without loss
+     of generality that the knight came from either of the two squares. *)
+  let knight_origins_rule state =
+    let open Square in
+    let assume_knight_origins_wlog (bi, gi) origins =
+      let bi_or_gi = SquareSet.of_list [ bi; gi ] in
+      let original_from_bi_or_gi =
+        SquareMap.filter (fun _ set -> SquareSet.equal bi_or_gi set) origins
+        |> SquareMap.bindings |> List.map fst
+      in
+      match original_from_bi_or_gi with
+      | [ n1; n2 ] ->
+          origins
+          |> SquareMap.add n1 (SquareSet.singleton bi)
+          |> SquareMap.add n2 (SquareSet.singleton gi)
+      | _ -> origins
+    in
+    let origins =
+      state.origins
+      |> assume_knight_origins_wlog (b1, g1)
+      |> assume_knight_origins_wlog (b8, g8)
+    in
+    { state with origins }
+
   (* If a piece is static, no piece has passed through its square. *)
   let static_mobility_rule state =
     let remove_arrows_passing_through s g =
@@ -625,6 +651,45 @@ module Rules = struct
     in
     { state with missing }
 
+  (* If the parity of the number of moves made by each side can be determined,
+     the side to move must be consistent with such parity, if it is not, the
+     position is illegal. *)
+  let parity_rule state =
+    (* Returns (Some b) if it can be determined that piece p, which started
+       the game on square s has performed a number of moves whose parity
+       coincides with b : int. It returns None otherwise. *)
+    let parity_of p s =
+      if SquareSet.mem s state.static then Some 0
+      else
+        match SquareMap.find_opt s state.destinies with
+        | Some ts -> (
+            (* Check that the parity is the same to all the candidate targets *)
+            let parities =
+              List.map
+                (fun t -> Mobility.parity (PieceMap.find p state.mobility) s t)
+                (SquareSet.to_seq ts |> List.of_seq)
+            in
+            match parities with
+            | hd :: tl when List.for_all (fun parity -> parity = hd) tl -> hd
+            | _ -> None)
+        | None -> None
+    in
+    let parity_of_halfmoves =
+      SquareMap.fold
+        (fun s p acc ->
+          match parity_of p s with
+          | Some b -> Option.bind acc (fun n -> Some (n + b))
+          | None -> None)
+        Board.initial (Some 0)
+    in
+    match parity_of_halfmoves with
+    | None -> state
+    | Some n ->
+        (* The parity of halfmoves is even iff it is White to move *)
+        if (n + if Position.is_white_to_move state.pos then 1 else 0) mod 2 = 0
+        then { state with illegal = true }
+        else state
+
   let all_rules =
     [
       static_rule;
@@ -632,6 +697,7 @@ module Rules = struct
       origins_rule;
       refine_origins_rule;
       destinies_rule;
+      knight_origins_rule;
       static_mobility_rule;
       static_king_rule;
       pawn_on_3rd_rank_rule;
@@ -639,6 +705,7 @@ module Rules = struct
       captures_lower_bound_rule;
       too_many_captures_rule;
       missing_rule;
+      parity_rule;
     ]
 
   let rec apply state rules =

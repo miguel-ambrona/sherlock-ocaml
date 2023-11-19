@@ -32,6 +32,8 @@ module Vertex = struct
   let hash s = s
 end
 
+module VertexMap = Map.Make (Vertex)
+
 module E = struct
   include Int
 
@@ -87,3 +89,29 @@ let distance ~infty g s t =
 
 let filter_edges f g =
   G.fold_edges (fun s t g -> if f s t then g else G.remove_edge g s t) g g
+
+(* This function returns Some b iff all paths from s to t in g use a number of
+   edges whose parity matches the one of b (b will always be 0 or 1).
+   This function returns None if there exist paths of both parities or no paths
+   at all. *)
+let parity g s t =
+  (* We will try to find a 2-coloring of the connected component of s.
+     If t belongs to the component, we return Some 0 if it is colored as s;
+     otherwise we return Some 1.
+     If a 2-coloring is not possible, or t does not belong to the connected
+     component of s, we return None. *)
+  let rec aux coloring v =
+    let c = VertexMap.find v coloring in
+    G.fold_pred
+      (fun w coloring_opt ->
+        match coloring_opt with
+        | None -> None
+        | Some coloring -> (
+            match VertexMap.find_opt w coloring with
+            | Some c' -> if c' = c then None else Some coloring
+            | None -> aux (VertexMap.add w (1 - c) coloring) w))
+      g v (Some coloring)
+  in
+  match aux (VertexMap.singleton t 0) t with
+  | None -> None
+  | Some coloring -> VertexMap.find_opt s coloring

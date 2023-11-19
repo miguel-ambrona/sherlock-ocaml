@@ -452,12 +452,31 @@ module Internal = struct
             [] );
         ]
 
+    let test_parity_rule () =
+      List.iter
+        (fun (fen, legality) ->
+          let pos = Position.of_fen (fen ^ " ? 1") in
+          let state = Rules.(apply (State.init pos) all_rules) in
+          legality_assertion state legality)
+        [
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -", Illegal);
+          ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -", TBD);
+          ( "r1bqkb1r/pppppppp/2n2n2/8/8/P1N2N1P/1PPPPPP1/R1BQKB1R b KQkq -",
+            Illegal );
+          ("r1bqkb1r/pppppppp/2n2n2/8/8/P1N2N1P/1PPPPPP1/R1BQKB1R w KQkq -", TBD);
+          ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQKBR1 w - -", Illegal);
+          ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQKBR1 b - -", TBD);
+          ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQK2R b - -", TBD);
+          ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQK2R b K -", Illegal);
+        ]
+
     let tests =
       Alcotest.
         [
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
+          test_case "destinies_rule" `Quick test_destinies_rule;
           test_case "static_mobility_rule" `Quick test_static_mobility_rule;
           test_case "static_king_rule" `Quick test_static_king_rule;
           test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
@@ -466,6 +485,7 @@ module Internal = struct
             test_captures_lower_bound_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
           test_case "test_missing_rule" `Quick test_missing_rule;
+          test_case "test_parity_rule" `Quick test_parity_rule;
         ]
   end
 
