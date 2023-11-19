@@ -90,6 +90,13 @@ let print_state (state : State.t) =
   Format.printf ">> origins:\n";
   Matrix.print [ finals_mat; origins_mat ];
   Format.printf ">>       final             initial\n";
+  Format.printf ">> destinies:\n";
+  SquareMap.iter
+    (fun o ts ->
+      Format.printf "%s -> {%s}\n" (Square.to_string o)
+        (String.concat ", "
+        @@ List.map Square.to_string (List.of_seq (SquareSet.to_seq ts))))
+    state.destinies;
   Format.printf ">>\n";
   SquareMap.iter
     (fun s ts ->

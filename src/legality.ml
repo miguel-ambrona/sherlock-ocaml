@@ -50,9 +50,14 @@ module State = struct
        - origins  : potential candidate origins of pieces that are still on the
                     board. For example, [a4 -> {a2, b2}] means that the piece
                     currently on a4 started the game in either a2 or b2.
+       - destinies: candidate location where pieces may have ended (either by
+                    being captured or because they are currently there in pos).
+                    The keys of this map can only be the squares in the
+                    1st, 2nd, 7th and 8th ranks. For example, [a2 -> {b3, b6}]
+                    means that the pawn that started on a2 ended in b3 or b6.
        - captures : lower bound on the number of captures performed by pieces
                     that are still on the board. For example, [a4 -> 2] means
-                    that the piece currently on a4 has captures at least twice.
+                    that the piece currently on a4 has captured at least twice.
        - mobility : map from pieces to mobility graphs (graphs where nodes are
                     squares and arrows indicate the possible moves the piece
                     of interest may have performed during the game).
@@ -65,6 +70,7 @@ module State = struct
     pos : Position.t;
     static : SquareSet.t;
     origins : SquareSet.t SquareMap.t;
+    destinies : SquareSet.t SquareMap.t;
     captures : int SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
     missing : uncertain_square_set ColorMap.t;
@@ -76,6 +82,7 @@ module State = struct
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
+      destinies = SquareMap.empty;
       captures = SquareMap.empty;
       mobility =
         PieceMap.of_seq
@@ -99,6 +106,8 @@ module State = struct
       illegal = false;
     }
 
+  type perspective = Existing | Missing
+
   let equal_uncertain_square_set s1 s2 =
     s1.cardinal = s2.cardinal
     && SquareSet.equal s1.definite s2.definite
@@ -111,6 +120,7 @@ module State = struct
     Position.equal s1.pos s2.pos
     && SquareSet.equal s1.static s2.static
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
+    && SquareMap.equal SquareSet.equal s1.destinies s2.destinies
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
     && SquareMap.equal Int.equal s1.captures s2.captures
     && ColorMap.equal equal_uncertain_square_set s1.missing s2.missing
@@ -211,6 +221,25 @@ module Helpers = struct
         |> List.fold_left min infty
     | _ -> distance p_graph origin target
 
+  (* [distance_to_target ~infty ~state o t] is a lower bound on the
+     number of captures needed for the piece originally on o to reach square t.
+     If such path is impossible, this function returns infty. *)
+  let distance_to_target ~infty ~(state : State.t) origin target =
+    let distance = Mobility.distance ~infty in
+    let p = Board.piece_at origin Board.initial |> Option.get in
+    let p_graph = PieceMap.find p state.mobility in
+    let c = Piece.color p in
+    match Piece.piece_type p with
+    | Pawn ->
+        (* We could reach target through a promotion. We assume that if the pawn
+           can reach a promoting square, it can then go anywhere, as there is so
+           much freedom with the promoted piece *)
+        List.map
+          (fun promotion -> distance p_graph origin promotion)
+          (Square.rank_squares (Board.Rank.relative 8 c))
+        |> List.fold_left min (distance p_graph origin target)
+    | _ -> distance (PieceMap.find p state.mobility) origin target
+
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
   let update_uncertain_square_set (usset : State.uncertain_square_set) =
@@ -219,6 +248,55 @@ module Helpers = struct
     let definite = if found_all then all else usset.definite in
     let candidates = SquareSet.diff usset.candidates definite in
     { usset with definite; candidates }
+
+  (* Returns a lower bound on the number of captures by White (respectively by
+     Black) to reach the structure of the current position. Obviously, the
+     actual number of captures is the number of missing pices, but here we
+     attend to the captures that are necessary for piece mobility, e.g., a pawn
+     which moved diagonally requires captures for doing so. *)
+  let structural_necessary_captures (state : State.t) =
+    SquareMap.fold
+      (fun s n (acc_w, acc_b) ->
+        if Position.white_piece_at s state.pos then (acc_w + n, acc_b)
+        else (acc_w, acc_b + n))
+      state.captures (0, 0)
+
+  (* Create a map from squares to integers. Binding [s -> n] means that the
+     piece associated to square s has performed at most n captures.
+     This number is computed based on the number of missing pieces and the
+     number of necessary captures for the mobility of some pawns.
+     The piece associated to s is either the piece currently on s
+     (if perspective = Existing) or the missing piece that started on s
+     (if perspective = Missing).
+  *)
+  let build_nb_affordable_captures_map ~perspective (state : State.t) =
+    let nb_white_missing = 16 - List.length (Position.white_pieces state.pos) in
+    let nb_black_missing = 16 - List.length (Position.black_pieces state.pos) in
+    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
+      structural_necessary_captures state
+    in
+    match perspective with
+    | State.Existing ->
+        SquareMap.mapi
+          (fun s n ->
+            if Position.white_piece_at s state.pos then
+              nb_black_missing - nb_necessary_captures_by_white + n
+            else nb_white_missing - nb_necessary_captures_by_black + n)
+          state.captures
+    | State.Missing ->
+        let white_bindings =
+          (ColorMap.find Color.White state.missing).definite
+          |> SquareSet.elements
+          |> List.map (fun s ->
+                 (s, nb_black_missing - nb_necessary_captures_by_white))
+        in
+        let black_bindings =
+          (ColorMap.find Color.White state.missing).definite
+          |> SquareSet.elements
+          |> List.map (fun s ->
+                 (s, nb_black_missing - nb_necessary_captures_by_white))
+        in
+        SquareMap.of_seq (List.to_seq @@ white_bindings @ black_bindings)
 end
 
 module Rules = struct
@@ -380,6 +458,51 @@ module Rules = struct
         | _ -> state)
       state groups
 
+  (* If the piece currently on square s has only one candidate origin o,
+     then we can claim that the destiny of o is s.
+     If s is the origin square of a missing piece, its candidate endings are,
+     a priori, all the squares that this piece could have reached. *)
+  let destinies_rule state =
+    (* Destinies due to single candidate origin *)
+    let destinies =
+      SquareMap.fold
+        (fun s s_origins destinies ->
+          match SquareSet.to_seq s_origins |> List.of_seq with
+          | [ o ] -> SquareMap.add o (SquareSet.singleton s) destinies
+          | _ -> destinies)
+        state.origins state.destinies
+    in
+    (* Missing pieces destinies *)
+    let affordable_nb_captures_map =
+      Helpers.build_nb_affordable_captures_map ~perspective:State.Missing state
+    in
+    let destinies =
+      let is_reachable o t =
+        let infty = 16 in
+        let bound =
+          match SquareMap.find_opt o affordable_nb_captures_map with
+          | None -> infty - 1
+          | Some b -> b
+        in
+        Helpers.distance_to_target ~infty ~state o t <= bound
+      in
+      let missing =
+        ColorMap.fold
+          (fun _ usset -> SquareSet.union usset.definite)
+          state.missing SquareSet.empty
+      in
+      SquareSet.fold
+        (fun o destinies ->
+          let candidate_targets =
+            let default = SquareSet.of_list Square.all_squares in
+            Option.value ~default (SquareMap.find_opt o destinies)
+            |> SquareSet.filter (fun t -> is_reachable o t)
+          in
+          SquareMap.add o candidate_targets destinies)
+        missing destinies
+    in
+    { state with destinies }
+
   (* If a piece is static, no piece has passed through its square. *)
   let static_mobility_rule state =
     let remove_arrows_passing_through s g =
@@ -440,11 +563,19 @@ module Rules = struct
   (* There must exist a path to a piece from any of its candidate origins. *)
   let route_from_origin_rule state =
     let infty = 16 in
+    let affordable_nb_captures_map =
+      Helpers.build_nb_affordable_captures_map ~perspective:State.Existing state
+    in
     let origins =
       SquareMap.mapi
         (fun s ->
+          let bound =
+            match SquareMap.find_opt s affordable_nb_captures_map with
+            | None -> infty - 1
+            | Some b -> b
+          in
           SquareSet.filter (fun o ->
-              Helpers.distance_from_origin ~infty ~state o s < infty))
+              Helpers.distance_from_origin ~infty ~state o s <= bound))
         state.origins
     in
     { state with origins }
@@ -467,16 +598,14 @@ module Rules = struct
   (* The position is illegal if there are more captures required than
      pieces off the board. *)
   let too_many_captures_rule state =
-    let nb_white_captured, nb_black_captured =
-      SquareMap.fold
-        (fun s n (nb_w, nb_b) ->
-          if Position.white_piece_at s state.pos then (nb_w, nb_b + n)
-          else (nb_w + n, nb_b))
-        state.captures (0, 0)
+    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
+      Helpers.structural_necessary_captures state
     in
     let nb_white = List.length (Position.white_pieces state.pos) in
     let nb_black = List.length (Position.black_pieces state.pos) in
-    if nb_white_captured > 16 - nb_white || nb_black_captured > 16 - nb_black
+    if
+      nb_necessary_captures_by_black > 16 - nb_white
+      || nb_necessary_captures_by_white > 16 - nb_black
     then { state with illegal = true }
     else state
 
@@ -502,6 +631,7 @@ module Rules = struct
       material_rule;
       origins_rule;
       refine_origins_rule;
+      destinies_rule;
       static_mobility_rule;
       static_king_rule;
       pawn_on_3rd_rank_rule;
