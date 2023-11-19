@@ -458,6 +458,7 @@ module Internal = struct
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
           test_case "origins_rule" `Quick test_origins_rule;
+          test_case "destinies_rule" `Quick test_destinies_rule;
           test_case "static_mobility_rule" `Quick test_static_mobility_rule;
           test_case "static_king_rule" `Quick test_static_king_rule;
           test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
