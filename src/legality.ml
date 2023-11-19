@@ -503,6 +503,32 @@ module Rules = struct
     in
     { state with destinies }
 
+  (* It is not possible to know with certainty whether a non-promoted white
+     knight came from b1 or g1. (In this legality analysis we do not have the
+     fullmove counter into account.) Consequently, we can assume without loss
+     of generality that the knight came from either of the two squares. *)
+  let knight_origins_rule state =
+    let open Square in
+    let assume_knight_origins_wlog (bi, gi) origins =
+      let bi_or_gi = SquareSet.of_list [ bi; gi ] in
+      let original_from_bi_or_gi =
+        SquareMap.filter (fun _ set -> SquareSet.equal bi_or_gi set) origins
+        |> SquareMap.bindings |> List.map fst
+      in
+      match original_from_bi_or_gi with
+      | [ n1; n2 ] ->
+          origins
+          |> SquareMap.add n1 (SquareSet.singleton bi)
+          |> SquareMap.add n2 (SquareSet.singleton gi)
+      | _ -> origins
+    in
+    let origins =
+      state.origins
+      |> assume_knight_origins_wlog (b1, g1)
+      |> assume_knight_origins_wlog (b8, g8)
+    in
+    { state with origins }
+
   (* If a piece is static, no piece has passed through its square. *)
   let static_mobility_rule state =
     let remove_arrows_passing_through s g =
@@ -632,6 +658,7 @@ module Rules = struct
       origins_rule;
       refine_origins_rule;
       destinies_rule;
+      knight_origins_rule;
       static_mobility_rule;
       static_king_rule;
       pawn_on_3rd_rank_rule;
