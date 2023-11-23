@@ -241,10 +241,6 @@ module Helpers = struct
         if resulting_pt <> None && resulting_pt <> Some pt then infty
         else distance p_graph origin target
 
-  let distance_to_target ~infty ~(state : State.t) origin target =
-    ignore infty;
-    distance_from_origin ~resulting_pt:None ~state origin target
-
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
   let update_uncertain_square_set (usset : State.uncertain_square_set) =
@@ -489,7 +485,7 @@ module Rules = struct
           | None -> infty - 1
           | Some b -> b
         in
-        Helpers.distance_to_target ~infty ~state o t <= bound
+        Helpers.distance_from_origin ~resulting_pt:None ~state o t <= bound
       in
       let missing =
         ColorMap.fold

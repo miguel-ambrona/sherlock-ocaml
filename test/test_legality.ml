@@ -94,10 +94,10 @@ module Internal = struct
           let state = State.init pos in
           let state = { state with static = SquareSet.of_list static } in
           let state = Rules.(apply state [ static_mobility_rule ]) in
-          let pt = Position.piece_at_exn s pos |> Piece.piece_type in
-          let d =
-            Helpers.distance_from_origin ~resulting_pt:(Some pt) ~state o s
+          let resulting_pt =
+            Position.piece_at s pos |> Option.map Piece.piece_type
           in
+          let d = Helpers.distance_from_origin ~resulting_pt ~state o s in
           assert (d = expected_distance))
         Square.
           [
@@ -113,22 +113,6 @@ module Internal = struct
             ("3p4/4pppp/8/8/8/2r5/8/8", d7, c3, 0);
             ("8/1ppppppp/p7/8/8/8/8/7R", e2, h1, infty);
             ("8/1ppppppp/8/p7/8/8/8/7R", e2, h1, 4);
-          ]
-
-    let test_distance_to_target () =
-      let infty = 16 in
-      List.iter
-        (fun (fen, o, t, expected_distance) ->
-          let pos = Position.of_fen (fen ^ " w - - 0 1") in
-          let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
-          let static = List.filter bP_in_s Board.squares in
-          let state = State.init pos in
-          let state = { state with static = SquareSet.of_list static } in
-          let state = Rules.(apply state [ static_mobility_rule ]) in
-          let d = Helpers.distance_to_target ~infty ~state o t in
-          assert (d = expected_distance))
-        Square.
-          [
             ("8/8/8/8/6p1/4pp2/8/8", f2, c5, 2);
             ("8/8/8/8/6p1/4pp2/8/8", e2, c5, 1);
             ("8/8/8/8/6p1/4pp2/8/8", h2, c5, 0);
@@ -151,7 +135,6 @@ module Internal = struct
           test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
           test_case "k_groups" `Quick test_k_groups;
           test_case "distance_from_origin" `Quick test_distance_from_origin;
-          test_case "distance_to_target" `Quick test_distance_to_target;
         ]
   end
 
