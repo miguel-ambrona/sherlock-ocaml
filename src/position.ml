@@ -84,6 +84,7 @@ let fullmove_number_to_string i = string_of_int i
 let set_piece (p, s) pos = { pos with board = Board.set_piece (p, s) pos.board }
 let remove_piece s pos = { pos with board = Board.remove_piece s pos.board }
 let piece_at s pos = Board.piece_at s pos.board
+let piece_at_exn s pos = piece_at s pos |> Option.get
 
 let white_piece_at s pos =
   match piece_at s pos with None -> false | Some p -> Piece.is_white p

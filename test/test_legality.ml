@@ -85,7 +85,7 @@ module Internal = struct
         ]
 
     let test_distance_from_origin () =
-      let infty = 1000 in
+      let infty = 16 in
       List.iter
         (fun (fen, o, s, expected_distance) ->
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
@@ -94,7 +94,10 @@ module Internal = struct
           let state = State.init pos in
           let state = { state with static = SquareSet.of_list static } in
           let state = Rules.(apply state [ static_mobility_rule ]) in
-          let d = Helpers.distance_from_origin ~infty ~state o s in
+          let pt = Position.piece_at_exn s pos |> Piece.piece_type in
+          let d =
+            Helpers.distance_from_origin ~resulting_pt:(Some pt) ~state o s
+          in
           assert (d = expected_distance))
         Square.
           [
@@ -113,7 +116,7 @@ module Internal = struct
           ]
 
     let test_distance_to_target () =
-      let infty = 1000 in
+      let infty = 16 in
       List.iter
         (fun (fen, o, t, expected_distance) ->
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
