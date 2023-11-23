@@ -199,46 +199,55 @@ module Helpers = struct
     let compare_cardinals s1 s2 = Int.compare (cardinal s1) (cardinal s2) in
     aux [] @@ List.sort (fun (_, s1) (_, s2) -> compare_cardinals s1 s2) sets
 
-  (* [distance_from_origin ~infty ~state o t] is a lower bound on the
-     number of captures needed for the piece standing on t to have come from the
-     original square o.
-     If such path is impossible, this function returns infty. *)
-  let distance_from_origin ~infty ~(state : State.t) origin target =
-    let distance = Mobility.distance ~infty in
-    let p = Position.piece_at target state.pos |> Option.get in
-    let p_graph = PieceMap.find p state.mobility in
-    let c = Piece.color p in
-    match Piece.piece_type p with
-    | (Queen | Rook | Bishop | Knight) when Square.in_relative_rank 2 c origin
-      ->
-        (* the piece at target is promoted *)
-        let pawn_graph = PieceMap.find (Piece.cP c) state.mobility in
-        List.map
-          (fun promotion ->
-            distance pawn_graph origin promotion
-            + distance p_graph promotion target)
-          (Square.rank_squares (Board.Rank.relative 8 c))
-        |> List.fold_left min infty
-    | _ -> distance p_graph origin target
+  (* [path_from_origin ~state origin target] provides a path from [origin] to
+     [target] minimizing the number of capture in case the moving piece is a
+     pawn. If the path is impossible, this function returns None.
 
-  (* [distance_to_target ~infty ~state o t] is a lower bound on the
-     number of captures needed for the piece originally on o to reach square t.
-     If such path is impossible, this function returns infty. *)
-  let distance_to_target ~infty ~(state : State.t) origin target =
-    let distance = Mobility.distance ~infty in
-    let p = Board.piece_at origin Board.initial |> Option.get in
+     The moving piece is the piece that starts the game in [origin].
+     If this piece is a pawn and [resulting_pt <> None], the pawn must promote
+     to the specified piece type before getting to [target], if possible.
+
+     When a path is found, this function returns the number of pawn captures in
+     the path as a second argument. *)
+  let path_from_origin ~(resulting_pt : Piece.piece_type option)
+      ~(state : State.t) origin target =
+    let p = Position.piece_at_exn origin Position.initial in
     let p_graph = PieceMap.find p state.mobility in
     let c = Piece.color p in
     match Piece.piece_type p with
-    | Pawn ->
-        (* We could reach target through a promotion. We assume that if the pawn
-           can reach a promoting square, it can then go anywhere, as there is so
-           much freedom with the promoted piece *)
-        List.map
-          (fun promotion -> distance p_graph origin promotion)
-          (Square.rank_squares (Board.Rank.relative 8 c))
-        |> List.fold_left min (distance p_graph origin target)
-    | _ -> distance (PieceMap.find p state.mobility) origin target
+    | Pawn -> (
+        let eight_rank = Square.rank_squares @@ Board.Rank.relative 8 c in
+        let select_shortest ~init options =
+          List.fold_left
+            (fun acc (p, d) ->
+              match acc with
+              | Some (_, d') when d' <= d -> acc
+              | _ -> Some (p, d))
+            init options
+        in
+        match resulting_pt with
+        | Some Pawn -> Mobility.path p_graph origin target
+        | Some pt ->
+            let t_graph = PieceMap.find (Piece.make c pt) state.mobility in
+            List.filter_map
+              (fun prom_sq ->
+                let until_prom = Mobility.path p_graph origin prom_sq in
+                let after_prom = Mobility.path t_graph prom_sq target in
+                match (until_prom, after_prom) with
+                | Some (p1, d1), Some (p2, d2) -> Some (p1 @ p2, d1 + d2)
+                | _ -> None)
+              eight_rank
+            |> select_shortest ~init:None
+        | None ->
+            (* Given all the freedom with promotion types, we assume that once
+               on the eight_rank the piece may go anywhere *)
+            List.filter_map
+              (fun prom_sq -> Mobility.path p_graph origin prom_sq)
+              eight_rank
+            |> select_shortest ~init:(Mobility.path p_graph origin target))
+    | pt ->
+        if resulting_pt <> None && resulting_pt <> Some pt then None
+        else Mobility.path p_graph origin target
 
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
@@ -484,7 +493,9 @@ module Rules = struct
           | None -> infty - 1
           | Some b -> b
         in
-        Helpers.distance_to_target ~infty ~state o t <= bound
+        match Helpers.path_from_origin ~resulting_pt:None ~state o t with
+        | None -> false
+        | Some (_, d) -> d <= bound
       in
       let missing =
         ColorMap.fold
@@ -570,7 +581,7 @@ module Rules = struct
     let mobility =
       SquareMap.fold
         (fun s origins mobility ->
-          let p = Position.piece_at s state.pos |> Option.get in
+          let p = Position.piece_at_exn s state.pos in
           if
             SquareSet.cardinal origins = 1
             && Piece.piece_type p = Pawn
@@ -600,8 +611,15 @@ module Rules = struct
             | None -> infty - 1
             | Some b -> b
           in
+          let pt =
+            Piece.piece_type (Position.piece_at s state.pos |> Option.get)
+          in
           SquareSet.filter (fun o ->
-              Helpers.distance_from_origin ~infty ~state o s <= bound))
+              match
+                Helpers.path_from_origin ~resulting_pt:(Some pt) ~state o s
+              with
+              | None -> false
+              | Some (_, d) -> d <= bound))
         state.origins
     in
     { state with origins }
@@ -614,8 +632,16 @@ module Rules = struct
     let captures =
       SquareMap.mapi
         (fun s origins ->
+          let pt =
+            Piece.piece_type (Position.piece_at s state.pos |> Option.get)
+          in
           SquareSet.elements origins
-          |> List.map (fun o -> Helpers.distance_from_origin ~infty ~state o s)
+          |> List.map (fun o ->
+                 match
+                   Helpers.path_from_origin ~resulting_pt:(Some pt) ~state o s
+                 with
+                 | None -> infty
+                 | Some (_, d) -> d)
           |> List.fold_left min infty)
         state.origins
     in

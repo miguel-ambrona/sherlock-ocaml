@@ -84,8 +84,7 @@ module Internal = struct
             [ 1; 3; 4; 6; 7 ] );
         ]
 
-    let test_distance_from_origin () =
-      let infty = 1000 in
+    let test_path_from_origin () =
       List.iter
         (fun (fen, o, s, expected_distance) ->
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
@@ -94,52 +93,41 @@ module Internal = struct
           let state = State.init pos in
           let state = { state with static = SquareSet.of_list static } in
           let state = Rules.(apply state [ static_mobility_rule ]) in
-          let d = Helpers.distance_from_origin ~infty ~state o s in
+          let resulting_pt =
+            Position.piece_at s pos |> Option.map Piece.piece_type
+          in
+          let d =
+            Option.map snd @@ Helpers.path_from_origin ~resulting_pt ~state o s
+          in
           assert (d = expected_distance))
         Square.
           [
-            ("8/8/8/2B5/6p1/4pp2/8/8", f2, c5, 2);
-            ("8/8/8/2B5/6p1/4pp2/8/8", h2, c5, 0);
-            ("8/8/8/2B5/6p1/4pp2/8/8", c2, c5, 1);
-            ("8/5p2/6pp/2B4p/5pp1/4pp2/8/8", f2, c5, 6);
-            ("8/5p2/6pp/2Q4p/5pp1/4pp2/8/8", f2, c5, 5);
-            ("5b2/8/8/8/8/8/8/8", f8, f8, 0);
-            ("5b2/8/8/8/8/8/8/8", f7, f8, 1);
-            ("5b2/8/8/8/8/8/8/8", g8, f8, infty);
-            ("3p4/4pppp/8/8/8/2r5/8/8", h8, c3, infty);
-            ("3p4/4pppp/8/8/8/2r5/8/8", d7, c3, 0);
-            ("8/1ppppppp/p7/8/8/8/8/7R", e2, h1, infty);
-            ("8/1ppppppp/8/p7/8/8/8/7R", e2, h1, 4);
-          ]
-
-    let test_distance_to_target () =
-      let infty = 1000 in
-      List.iter
-        (fun (fen, o, t, expected_distance) ->
-          let pos = Position.of_fen (fen ^ " w - - 0 1") in
-          let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
-          let static = List.filter bP_in_s Board.squares in
-          let state = State.init pos in
-          let state = { state with static = SquareSet.of_list static } in
-          let state = Rules.(apply state [ static_mobility_rule ]) in
-          let d = Helpers.distance_to_target ~infty ~state o t in
-          assert (d = expected_distance))
-        Square.
-          [
-            ("8/8/8/8/6p1/4pp2/8/8", f2, c5, 2);
-            ("8/8/8/8/6p1/4pp2/8/8", e2, c5, 1);
-            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, 0);
-            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, 0);
-            ("8/5p2/6pp/7p/5pp1/4pp2/8/8", f2, c5, 5);
-            ("2p5/ppp5/8/8/8/8/8/8", a8, b8, 0);
-            ("2p5/ppp5/8/8/8/8/8/8", a8, e8, infty);
-            ("2p5/ppp5/8/8/8/8/8/8", a1, a8, infty);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", e2, h8, 4);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, h8, infty);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, g8, 0);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", b1, g8, infty);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", a1, g8, infty);
-            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", d1, g8, 0);
+            ("8/8/8/2B5/6p1/4pp2/8/8", f2, c5, Some 2);
+            ("8/8/8/2B5/6p1/4pp2/8/8", h2, c5, Some 0);
+            ("8/8/8/2B5/6p1/4pp2/8/8", c2, c5, Some 1);
+            ("8/5p2/6pp/2B4p/5pp1/4pp2/8/8", f2, c5, Some 6);
+            ("8/5p2/6pp/2Q4p/5pp1/4pp2/8/8", f2, c5, Some 5);
+            ("5b2/8/8/8/8/8/8/8", f8, f8, Some 0);
+            ("5b2/8/8/8/8/8/8/8", f7, f8, Some 1);
+            ("5b2/8/8/8/8/8/8/8", g8, f8, None);
+            ("3p4/4pppp/8/8/8/2r5/8/8", h8, c3, None);
+            ("3p4/4pppp/8/8/8/2r5/8/8", d7, c3, Some 0);
+            ("8/1ppppppp/p7/8/8/8/8/7R", e2, h1, None);
+            ("8/1ppppppp/8/p7/8/8/8/7R", e2, h1, Some 4);
+            ("8/8/8/8/6p1/4pp2/8/8", f2, c5, Some 2);
+            ("8/8/8/8/6p1/4pp2/8/8", e2, c5, Some 1);
+            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, Some 0);
+            ("8/8/8/8/6p1/4pp2/8/8", h2, c5, Some 0);
+            ("8/5p2/6pp/7p/5pp1/4pp2/8/8", f2, c5, Some 5);
+            ("2p5/ppp5/8/8/8/8/8/8", a8, b8, Some 0);
+            ("2p5/ppp5/8/8/8/8/8/8", a8, e8, None);
+            ("2p5/ppp5/8/8/8/8/8/8", a1, a8, None);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", e2, h8, Some 4);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, h8, None);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", g1, g8, Some 0);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", b1, g8, None);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", a1, g8, None);
+            ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", d1, g8, Some 0);
           ]
 
     let tests =
@@ -147,8 +135,7 @@ module Internal = struct
         [
           test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
           test_case "k_groups" `Quick test_k_groups;
-          test_case "distance_from_origin" `Quick test_distance_from_origin;
-          test_case "distance_to_target" `Quick test_distance_to_target;
+          test_case "path_from_origin" `Quick test_path_from_origin;
         ]
   end
 
@@ -247,7 +234,7 @@ module Internal = struct
     let test_static_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
-          let connected g s t = Mobility.distance ~infty:16 g s t < 16 in
+          let connected g s t = Option.is_some @@ Mobility.path g s t in
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
