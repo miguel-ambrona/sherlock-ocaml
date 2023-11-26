@@ -63,6 +63,9 @@ module State = struct
                     of interest may have performed during the game).
        - missing  : map from colors to the set of candidate missing pieces of
                     that color, represented by the square where they started.
+       - tombs    : map from colors to list of squares where the player of that
+                    color has for sure captured enemy pieces. Tombs are stored
+                    as a list (instead of a set) to allow for duplicates.
        - illegal  : flag indicating whether the position has been proven illegal
                     ("false" does not necessarily mean the position is legal).
   *)
@@ -74,6 +77,7 @@ module State = struct
     captures : int SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
     missing : uncertain_square_set ColorMap.t;
+    tombs : Square.t list ColorMap.t;
     illegal : bool;
   }
 
@@ -103,6 +107,8 @@ module State = struct
             (c, usset))
           Color.[ White; Black ]
         |> List.to_seq |> ColorMap.of_seq;
+      tombs =
+        Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq;
       illegal = false;
     }
 
@@ -251,6 +257,28 @@ module Helpers = struct
     | pt ->
         if resulting_pt <> None && resulting_pt <> Some pt then None
         else path p_graph origin target
+
+  (* Returns a set of squares where a capture must have taken place for the
+     piece that started the game in [origin] to reach square [target].
+
+     If this piece is a pawn and [resulting_pt = Some pt] with [pt <> Pawn],
+     the pawn must promote to the specified piece type before getting to
+     [target], if possible. *)
+  let capturing_squares_in_path ~(resulting_pt : Piece.piece_type option)
+      ~(state : State.t) origin target =
+    match
+      path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt ~state origin
+        target
+    with
+    | None -> SquareSet.empty
+    | Some (_, 0) -> SquareSet.empty
+    | Some (path, _) ->
+        List.filter_map (fun (_, w, t) -> if w = 1 then Some t else None) path
+        |> SquareSet.of_list
+        |> SquareSet.filter (fun s ->
+               Option.is_none
+                 (path_from_origin ~to_avoid:(SquareSet.singleton s)
+                    ~resulting_pt ~state origin target))
 
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
@@ -683,6 +711,31 @@ module Rules = struct
     in
     { state with missing }
 
+  let tombs_rule state =
+    let empty_tombs =
+      Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq
+    in
+    let tombs =
+      SquareMap.fold
+        (fun s origins tombs ->
+          let p = Position.piece_at_exn s state.pos in
+          let pt = Piece.piece_type p in
+          let c = Piece.color p in
+          let p_tombs =
+            SquareSet.fold
+              (fun o ->
+                SquareSet.inter
+                  (Helpers.capturing_squares_in_path ~resulting_pt:(Some pt)
+                     ~state o s))
+              origins
+              (SquareSet.of_list Board.squares)
+            |> SquareSet.elements
+          in
+          ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
+        state.origins empty_tombs
+    in
+    { state with tombs }
+
   (* If the parity of the number of moves made by each side can be determined,
      the side to move must be consistent with such parity, if it is not, the
      position is illegal. *)
@@ -737,6 +790,7 @@ module Rules = struct
       captures_lower_bound_rule;
       too_many_captures_rule;
       missing_rule;
+      tombs_rule;
       parity_rule;
     ]
 
