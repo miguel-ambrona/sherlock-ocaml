@@ -97,7 +97,9 @@ module Internal = struct
             Position.piece_at s pos |> Option.map Piece.piece_type
           in
           let d =
-            Option.map snd @@ Helpers.path_from_origin ~resulting_pt ~state o s
+            Option.map snd
+            @@ Helpers.path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt
+                 ~state o s
           in
           assert (d = expected_distance))
         Square.
@@ -234,7 +236,9 @@ module Internal = struct
     let test_static_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
-          let connected g s t = Option.is_some @@ Mobility.path g s t in
+          let connected g s t =
+            Option.is_some @@ Mobility.path ~to_avoid:SquareSet.empty g s t
+          in
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
