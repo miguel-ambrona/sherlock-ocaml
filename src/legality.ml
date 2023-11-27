@@ -380,8 +380,10 @@ module Rules = struct
     (* Static pieces due to restricted movements. *)
     List.fold_left
       (fun state (p, s) ->
-        if List.for_all (is_static ~state) (Helpers.predecessors p s) then
-          { state with static = SquareSet.add s state.static }
+        if
+          Board.piece_at s Board.initial = Some p
+          && List.for_all (is_static ~state) (Helpers.predecessors p s)
+        then { state with static = SquareSet.add s state.static }
         else state)
       { state with static }
       (Position.pieces state.pos)
