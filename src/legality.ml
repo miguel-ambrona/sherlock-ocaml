@@ -558,16 +558,51 @@ module Rules = struct
     let open Square in
     let assume_knight_origins_wlog (bi, gi) origins =
       let bi_or_gi = SquareSet.of_list [ bi; gi ] in
-      let original_from_bi_or_gi =
-        SquareMap.filter (fun _ set -> SquareSet.equal bi_or_gi set) origins
-        |> SquareMap.bindings |> List.map fst
+      let knights =
+        SquareMap.filter (fun _ set -> SquareSet.subset bi_or_gi set) origins
       in
-      match original_from_bi_or_gi with
-      | [ n1; n2 ] ->
-          origins
-          |> SquareMap.add n1 (SquareSet.singleton bi)
-          |> SquareMap.add n2 (SquareSet.singleton gi)
-      | _ -> origins
+      let knight_locs = SquareMap.bindings knights |> List.map fst in
+      if knight_locs = [] then origins
+      else
+        (* First, make sure that all knights are connected, without having to
+           retract pawns *)
+        let connected =
+          let first_loc = List.hd knight_locs in
+          let to_avoid =
+            List.filter
+              (fun (p, _) -> Piece.piece_type p = Piece.pawn)
+              (Position.pieces state.pos)
+            |> List.map snd |> SquareSet.of_list
+          in
+          let knight_graph =
+            PieceMap.find
+              (Position.piece_at_exn first_loc state.pos)
+              state.mobility
+          in
+          let connected s t =
+            Option.is_some @@ Mobility.path ~to_avoid knight_graph s t
+          in
+          List.fold_left
+            (fun (acc, s1) s2 -> (acc && connected s1 s2, s2))
+            (true, first_loc) (List.tl knight_locs)
+          |> fst
+        in
+        if not connected then origins
+        else
+          let knight_origins =
+            SquareMap.fold (fun _ -> SquareSet.union) knights SquareSet.empty
+          in
+          match
+            SquareSet.cardinal knight_origins - SquareMap.cardinal knights
+          with
+          | 0 ->
+              origins
+              |> SquareMap.add (List.nth knight_locs 0) (SquareSet.singleton bi)
+              |> SquareMap.add (List.nth knight_locs 1) (SquareSet.singleton gi)
+          | 1 ->
+              origins
+              |> SquareMap.add (List.nth knight_locs 0) (SquareSet.singleton bi)
+          | _ -> origins
     in
     let origins =
       state.origins
