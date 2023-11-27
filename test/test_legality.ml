@@ -443,6 +443,52 @@ module Internal = struct
             [] );
         ]
 
+    let test_tombs_rule () =
+      List.iter
+        (fun (fen, expected_white_tombs, expected_black_tombs) ->
+          let rules =
+            Rules.
+              [
+                static_rule;
+                origins_rule;
+                refine_origins_rule;
+                knight_origins_rule;
+                static_mobility_rule;
+                static_king_rule;
+                pawn_on_3rd_rank_rule;
+                tombs_rule;
+              ]
+          in
+          let state = Rules.apply (State.init @@ Position.of_fen fen) rules in
+          let white_tombs = ColorMap.find Color.White state.tombs in
+          let black_tombs = ColorMap.find Color.Black state.tombs in
+          let equal_when_sorted l1 l2 =
+            List.sort Square.compare l1 = List.sort Square.compare l2
+          in
+          assert (equal_when_sorted white_tombs expected_white_tombs);
+          assert (equal_when_sorted black_tombs expected_black_tombs))
+        [
+          (* Black tombs need to be updated after we improve the logic *)
+          ( "r1bqkb1r/1ppppppp/8/2P5/8/8/PPPPP1PP/R1BQKB1R w KQkq - ? 1",
+            [ c5; d4; e3 ],
+            [] );
+          ( "rnbqk2r/pppppp1p/6p1/8/8/NN6/PPPPP1P1/RNBQKBNR w KQkq - ? 1",
+            [ g7; g7 ],
+            [] );
+          ( "r1bqk1Br/pppppp1p/6p1/8/8/2B5/PPPPP1P1/RNBQKBNR w KQk - ? 1",
+            [ g7; g7; f8 ],
+            [] );
+          ( "r2qkb1r/p1ppp1p1/1p3p1p/8/8/1B6/PPPPPPP1/RN1QKBNR w KQkq - ? 1",
+            [ g6; h7; g8 ],
+            [] );
+          ( "rnbqkbnr/ppnppppp/8/8/8/8/PPPPPPP1/R3K3 w kq - ? 1",
+            [],
+            [ d6; e5; f4; g3; h2 ] );
+          ( "r2qk2r/p1pppp1p/2p2p2/8/P6P/8/PP1PP1PP/R1BQKB1R w KQkq - ? 1",
+            [ b3; a4; g3; h4 ],
+            [ c6; f6 ] );
+        ]
+
     let test_parity_rule () =
       List.iter
         (fun (fen, legality) ->
@@ -476,6 +522,7 @@ module Internal = struct
             test_captures_lower_bound_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
           test_case "test_missing_rule" `Quick test_missing_rule;
+          test_case "test_tombs_rule" `Quick test_tombs_rule;
           test_case "test_parity_rule" `Quick test_parity_rule;
         ]
   end
