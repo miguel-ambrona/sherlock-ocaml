@@ -63,6 +63,9 @@ module State = struct
                     of interest may have performed during the game).
        - missing  : map from colors to the set of candidate missing pieces of
                     that color, represented by the square where they started.
+       - tombs    : map from colors to list of squares where the player of that
+                    color has for sure captured enemy pieces. Tombs are stored
+                    as a list (instead of a set) to allow for duplicates.
        - illegal  : flag indicating whether the position has been proven illegal
                     ("false" does not necessarily mean the position is legal).
   *)
@@ -74,6 +77,7 @@ module State = struct
     captures : int SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
     missing : uncertain_square_set ColorMap.t;
+    tombs : Square.t list ColorMap.t;
     illegal : bool;
   }
 
@@ -103,6 +107,8 @@ module State = struct
             (c, usset))
           Color.[ White; Black ]
         |> List.to_seq |> ColorMap.of_seq;
+      tombs =
+        Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq;
       illegal = false;
     }
 
@@ -204,13 +210,16 @@ module Helpers = struct
      pawn. If the path is impossible, this function returns None.
 
      The moving piece is the piece that starts the game in [origin].
-     If this piece is a pawn and [resulting_pt <> None], the pawn must promote
-     to the specified piece type before getting to [target], if possible.
+     If this piece is a pawn and [resulting_pt = Some pt] with [pt <> Pawn],
+     the pawn must promote to the specified piece type before getting to
+     [target], if possible.
+     [to_avoid] is a set of squares to be avoided in the path.
 
      When a path is found, this function returns the number of pawn captures in
      the path as a second argument. *)
   let path_from_origin ~(resulting_pt : Piece.piece_type option)
-      ~(state : State.t) origin target =
+      ~(to_avoid : SquareSet.t) ~(state : State.t) origin target =
+    let path = Mobility.path ~to_avoid in
     let p = Position.piece_at_exn origin Position.initial in
     let p_graph = PieceMap.find p state.mobility in
     let c = Piece.color p in
@@ -226,13 +235,13 @@ module Helpers = struct
             init options
         in
         match resulting_pt with
-        | Some Pawn -> Mobility.path p_graph origin target
+        | Some Pawn -> path p_graph origin target
         | Some pt ->
             let t_graph = PieceMap.find (Piece.make c pt) state.mobility in
             List.filter_map
               (fun prom_sq ->
-                let until_prom = Mobility.path p_graph origin prom_sq in
-                let after_prom = Mobility.path t_graph prom_sq target in
+                let until_prom = path p_graph origin prom_sq in
+                let after_prom = path t_graph prom_sq target in
                 match (until_prom, after_prom) with
                 | Some (p1, d1), Some (p2, d2) -> Some (p1 @ p2, d1 + d2)
                 | _ -> None)
@@ -242,12 +251,34 @@ module Helpers = struct
             (* Given all the freedom with promotion types, we assume that once
                on the eight_rank the piece may go anywhere *)
             List.filter_map
-              (fun prom_sq -> Mobility.path p_graph origin prom_sq)
+              (fun prom_sq -> path p_graph origin prom_sq)
               eight_rank
-            |> select_shortest ~init:(Mobility.path p_graph origin target))
+            |> select_shortest ~init:(path p_graph origin target))
     | pt ->
         if resulting_pt <> None && resulting_pt <> Some pt then None
-        else Mobility.path p_graph origin target
+        else path p_graph origin target
+
+  (* Returns a set of squares where a capture must have taken place for the
+     piece that started the game in [origin] to reach square [target].
+
+     If this piece is a pawn and [resulting_pt = Some pt] with [pt <> Pawn],
+     the pawn must promote to the specified piece type before getting to
+     [target], if possible. *)
+  let capturing_squares_in_path ~(resulting_pt : Piece.piece_type option)
+      ~(state : State.t) origin target =
+    match
+      path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt ~state origin
+        target
+    with
+    | None -> SquareSet.empty
+    | Some (_, 0) -> SquareSet.empty
+    | Some (path, _) ->
+        List.filter_map (fun (_, w, t) -> if w = 1 then Some t else None) path
+        |> SquareSet.of_list
+        |> SquareSet.filter (fun s ->
+               Option.is_none
+                 (path_from_origin ~to_avoid:(SquareSet.singleton s)
+                    ~resulting_pt ~state origin target))
 
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
@@ -349,8 +380,10 @@ module Rules = struct
     (* Static pieces due to restricted movements. *)
     List.fold_left
       (fun state (p, s) ->
-        if List.for_all (is_static ~state) (Helpers.predecessors p s) then
-          { state with static = SquareSet.add s state.static }
+        if
+          Board.piece_at s Board.initial = Some p
+          && List.for_all (is_static ~state) (Helpers.predecessors p s)
+        then { state with static = SquareSet.add s state.static }
         else state)
       { state with static }
       (Position.pieces state.pos)
@@ -493,7 +526,10 @@ module Rules = struct
           | None -> infty - 1
           | Some b -> b
         in
-        match Helpers.path_from_origin ~resulting_pt:None ~state o t with
+        match
+          Helpers.path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt:None
+            ~state o t
+        with
         | None -> false
         | Some (_, d) -> d <= bound
       in
@@ -522,16 +558,51 @@ module Rules = struct
     let open Square in
     let assume_knight_origins_wlog (bi, gi) origins =
       let bi_or_gi = SquareSet.of_list [ bi; gi ] in
-      let original_from_bi_or_gi =
-        SquareMap.filter (fun _ set -> SquareSet.equal bi_or_gi set) origins
-        |> SquareMap.bindings |> List.map fst
+      let knights =
+        SquareMap.filter (fun _ set -> SquareSet.subset bi_or_gi set) origins
       in
-      match original_from_bi_or_gi with
-      | [ n1; n2 ] ->
-          origins
-          |> SquareMap.add n1 (SquareSet.singleton bi)
-          |> SquareMap.add n2 (SquareSet.singleton gi)
-      | _ -> origins
+      let knight_locs = SquareMap.bindings knights |> List.map fst in
+      if knight_locs = [] then origins
+      else
+        (* First, make sure that all knights are connected, without having to
+           retract pawns *)
+        let connected =
+          let first_loc = List.hd knight_locs in
+          let to_avoid =
+            List.filter
+              (fun (p, _) -> Piece.piece_type p = Piece.pawn)
+              (Position.pieces state.pos)
+            |> List.map snd |> SquareSet.of_list
+          in
+          let knight_graph =
+            PieceMap.find
+              (Position.piece_at_exn first_loc state.pos)
+              state.mobility
+          in
+          let connected s t =
+            Option.is_some @@ Mobility.path ~to_avoid knight_graph s t
+          in
+          List.fold_left
+            (fun (acc, s1) s2 -> (acc && connected s1 s2, s2))
+            (true, first_loc) (List.tl knight_locs)
+          |> fst
+        in
+        if not connected then origins
+        else
+          let knight_origins =
+            SquareMap.fold (fun _ -> SquareSet.union) knights SquareSet.empty
+          in
+          match
+            SquareSet.cardinal knight_origins - SquareMap.cardinal knights
+          with
+          | 0 ->
+              origins
+              |> SquareMap.add (List.nth knight_locs 0) (SquareSet.singleton bi)
+              |> SquareMap.add (List.nth knight_locs 1) (SquareSet.singleton gi)
+          | 1 ->
+              origins
+              |> SquareMap.add (List.nth knight_locs 0) (SquareSet.singleton bi)
+          | _ -> origins
     in
     let origins =
       state.origins
@@ -611,12 +682,11 @@ module Rules = struct
             | None -> infty - 1
             | Some b -> b
           in
-          let pt =
-            Piece.piece_type (Position.piece_at s state.pos |> Option.get)
-          in
+          let pt = Piece.piece_type (Position.piece_at_exn s state.pos) in
           SquareSet.filter (fun o ->
               match
-                Helpers.path_from_origin ~resulting_pt:(Some pt) ~state o s
+                Helpers.path_from_origin ~to_avoid:SquareSet.empty
+                  ~resulting_pt:(Some pt) ~state o s
               with
               | None -> false
               | Some (_, d) -> d <= bound))
@@ -638,7 +708,8 @@ module Rules = struct
           SquareSet.elements origins
           |> List.map (fun o ->
                  match
-                   Helpers.path_from_origin ~resulting_pt:(Some pt) ~state o s
+                   Helpers.path_from_origin ~to_avoid:SquareSet.empty
+                     ~resulting_pt:(Some pt) ~state o s
                  with
                  | None -> infty
                  | Some (_, d) -> d)
@@ -676,6 +747,31 @@ module Rules = struct
         state.missing
     in
     { state with missing }
+
+  let tombs_rule state =
+    let empty_tombs =
+      Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq
+    in
+    let tombs =
+      SquareMap.fold
+        (fun s origins tombs ->
+          let p = Position.piece_at_exn s state.pos in
+          let pt = Piece.piece_type p in
+          let c = Piece.color p in
+          let p_tombs =
+            SquareSet.fold
+              (fun o ->
+                SquareSet.inter
+                  (Helpers.capturing_squares_in_path ~resulting_pt:(Some pt)
+                     ~state o s))
+              origins
+              (SquareSet.of_list Board.squares)
+            |> SquareSet.elements
+          in
+          ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
+        state.origins empty_tombs
+    in
+    { state with tombs }
 
   (* If the parity of the number of moves made by each side can be determined,
      the side to move must be consistent with such parity, if it is not, the
@@ -731,6 +827,7 @@ module Rules = struct
       captures_lower_bound_rule;
       too_many_captures_rule;
       missing_rule;
+      tombs_rule;
       parity_rule;
     ]
 

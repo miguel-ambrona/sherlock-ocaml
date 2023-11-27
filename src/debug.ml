@@ -82,6 +82,14 @@ let print_state (state : State.t) =
   in
   let white_missing = ColorMap.find Color.White state.missing in
   let black_missing = ColorMap.find Color.Black state.missing in
+  let tombs_matrix c =
+    let c_tombs = ColorMap.find c state.tombs in
+    List.fold_left
+      (fun matrix s ->
+        let n = List.filter (Square.equal s) c_tombs |> List.length in
+        Matrix.add s (48 - 64 + n) matrix)
+      Matrix.empty c_tombs
+  in
   Format.printf "\n\n\n";
   Format.printf ">> pos: %s\n" @@ Position.to_fen state.pos;
   Format.printf ">> proven illegal: %b\n" state.illegal;
@@ -115,4 +123,9 @@ let print_state (state : State.t) =
   Matrix.print [ missing_matrix white_missing; missing_matrix black_missing ];
   Format.printf ">>     white (%d)          black (%d)\n" white_missing.cardinal
     black_missing.cardinal;
+  Format.printf ">>\n";
+  Format.printf ">> tombs:\n";
+  Matrix.print [ tombs_matrix Color.White; tombs_matrix Color.Black ];
+  Format.printf ">>  black tombs (%d)   white tombs (%d)\n"
+    black_missing.cardinal white_missing.cardinal;
   Format.printf ">>\n"

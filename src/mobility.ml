@@ -23,6 +23,7 @@
 (*****************************************************************************)
 
 module Square = Board.Square
+module SquareSet = Set.Make (Square)
 
 module Vertex = struct
   type t = Square.t
@@ -84,7 +85,11 @@ let piece_graph p =
       let weight s t = if Square.(file s = file t) then 0 else 1 in
       slow_piece_graph ~weight (pawn_forward_targets c)
 
-let path g s t = try Some (Path.shortest_path g s t) with Not_found -> None
+let path ~to_avoid g s t =
+  if SquareSet.mem s to_avoid || SquareSet.mem t to_avoid then None
+  else
+    let g = SquareSet.fold (fun s g -> G.remove_vertex g s) to_avoid g in
+    try Some (Path.shortest_path g s t) with Not_found -> None
 
 let filter_edges f g =
   G.fold_edges (fun s t g -> if f s t then g else G.remove_edge g s t) g g
