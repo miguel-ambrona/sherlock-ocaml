@@ -55,9 +55,11 @@ module State = struct
                     The keys of this map can only be the squares in the
                     1st, 2nd, 7th and 8th ranks. For example, [a2 -> {b3, b6}]
                     means that the pawn that started on a2 ended in b3 or b6.
-       - captures : lower bound on the number of captures performed by pieces
-                    that are still on the board. For example, [a4 -> 2] means
-                    that the piece currently on a4 has captured at least twice.
+       - captures : a map from squares to pairs of integers; [a2 -> (3, 5)]
+                    means that the piece that started the game on a2 performed
+                    at least 3 captures and at most 5 (bounds are inclusive).
+                    The keys of this map can only be the squares in the
+                    1st, 2nd, 7th and 8th ranks.
        - mobility : map from pieces to mobility graphs (graphs where nodes are
                     squares and arrows indicate the possible moves the piece
                     of interest may have performed during the game).
@@ -74,7 +76,7 @@ module State = struct
     static : SquareSet.t;
     origins : SquareSet.t SquareMap.t;
     destinies : SquareSet.t SquareMap.t;
-    captures : int SquareMap.t;
+    captures : (int * int) SquareMap.t;
     mobility : Mobility.G.t PieceMap.t;
     missing : uncertain_square_set ColorMap.t;
     tombs : Square.t list ColorMap.t;
@@ -87,7 +89,14 @@ module State = struct
       static = SquareSet.empty;
       origins = SquareMap.empty;
       destinies = SquareMap.empty;
-      captures = SquareMap.empty;
+      captures =
+        List.fold_left
+          (fun acc r ->
+            List.fold_left
+              (fun acc s -> SquareMap.add s (0, 15) acc)
+              acc
+              (Board.Rank.relative r White |> Square.rank_squares))
+          SquareMap.empty [ 1; 2; 7; 8 ];
       mobility =
         PieceMap.of_seq
           (List.to_seq
@@ -128,7 +137,7 @@ module State = struct
     && SquareMap.equal SquareSet.equal s1.origins s2.origins
     && SquareMap.equal SquareSet.equal s1.destinies s2.destinies
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
-    && SquareMap.equal Int.equal s1.captures s2.captures
+    && SquareMap.equal ( = ) s1.captures s2.captures
     && ColorMap.equal equal_uncertain_square_set s1.missing s2.missing
     && Bool.equal s1.illegal s2.illegal
 end
@@ -273,12 +282,16 @@ module Helpers = struct
     | None -> SquareSet.empty
     | Some (_, 0) -> SquareSet.empty
     | Some (path, _) ->
+        let _, bound = SquareMap.find origin state.captures in
         List.filter_map (fun (_, w, t) -> if w = 1 then Some t else None) path
         |> SquareSet.of_list
         |> SquareSet.filter (fun s ->
-               Option.is_none
-                 (path_from_origin ~to_avoid:(SquareSet.singleton s)
-                    ~resulting_pt ~state origin target))
+               match
+                 path_from_origin ~to_avoid:(SquareSet.singleton s)
+                   ~resulting_pt ~state origin target
+               with
+               | None -> true
+               | Some (_, d) -> d > bound)
 
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
@@ -288,55 +301,6 @@ module Helpers = struct
     let definite = if found_all then all else usset.definite in
     let candidates = SquareSet.diff usset.candidates definite in
     { usset with definite; candidates }
-
-  (* Returns a lower bound on the number of captures by White (respectively by
-     Black) to reach the structure of the current position. Obviously, the
-     actual number of captures is the number of missing pices, but here we
-     attend to the captures that are necessary for piece mobility, e.g., a pawn
-     which moved diagonally requires captures for doing so. *)
-  let structural_necessary_captures (state : State.t) =
-    SquareMap.fold
-      (fun s n (acc_w, acc_b) ->
-        if Position.white_piece_at s state.pos then (acc_w + n, acc_b)
-        else (acc_w, acc_b + n))
-      state.captures (0, 0)
-
-  (* Create a map from squares to integers. Binding [s -> n] means that the
-     piece associated to square s has performed at most n captures.
-     This number is computed based on the number of missing pieces and the
-     number of necessary captures for the mobility of some pawns.
-     The piece associated to s is either the piece currently on s
-     (if perspective = Existing) or the missing piece that started on s
-     (if perspective = Missing).
-  *)
-  let build_nb_affordable_captures_map ~perspective (state : State.t) =
-    let nb_white_missing = 16 - List.length (Position.white_pieces state.pos) in
-    let nb_black_missing = 16 - List.length (Position.black_pieces state.pos) in
-    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
-      structural_necessary_captures state
-    in
-    match perspective with
-    | State.Existing ->
-        SquareMap.mapi
-          (fun s n ->
-            if Position.white_piece_at s state.pos then
-              nb_black_missing - nb_necessary_captures_by_white + n
-            else nb_white_missing - nb_necessary_captures_by_black + n)
-          state.captures
-    | State.Missing ->
-        let white_bindings =
-          (ColorMap.find Color.White state.missing).definite
-          |> SquareSet.elements
-          |> List.map (fun s ->
-                 (s, nb_black_missing - nb_necessary_captures_by_white))
-        in
-        let black_bindings =
-          (ColorMap.find Color.White state.missing).definite
-          |> SquareSet.elements
-          |> List.map (fun s ->
-                 (s, nb_black_missing - nb_necessary_captures_by_white))
-        in
-        SquareMap.of_seq (List.to_seq @@ white_bindings @ black_bindings)
 end
 
 module Rules = struct
@@ -515,17 +479,9 @@ module Rules = struct
         state.origins state.destinies
     in
     (* Missing pieces destinies *)
-    let affordable_nb_captures_map =
-      Helpers.build_nb_affordable_captures_map ~perspective:State.Missing state
-    in
     let destinies =
       let is_reachable o t =
-        let infty = 16 in
-        let bound =
-          match SquareMap.find_opt o affordable_nb_captures_map with
-          | None -> infty - 1
-          | Some b -> b
-        in
+        let _, bound = SquareMap.find o state.captures in
         match
           Helpers.path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt:None
             ~state o t
@@ -670,20 +626,12 @@ module Rules = struct
 
   (* There must exist a path to a piece from any of its candidate origins. *)
   let route_from_origin_rule state =
-    let infty = 16 in
-    let affordable_nb_captures_map =
-      Helpers.build_nb_affordable_captures_map ~perspective:State.Existing state
-    in
     let origins =
       SquareMap.mapi
         (fun s ->
-          let bound =
-            match SquareMap.find_opt s affordable_nb_captures_map with
-            | None -> infty - 1
-            | Some b -> b
-          in
           let pt = Piece.piece_type (Position.piece_at_exn s state.pos) in
           SquareSet.filter (fun o ->
+              let _, bound = SquareMap.find o state.captures in
               match
                 Helpers.path_from_origin ~to_avoid:SquareSet.empty
                   ~resulting_pt:(Some pt) ~state o s
@@ -697,38 +645,74 @@ module Rules = struct
   (* We can fill the captures field for every piece based on the minimum
      distance from its candidate origins, since distance measures number
      of captures necessary to navigate over the mobility graph. *)
-  let captures_lower_bound_rule state =
-    let infty = 16 in
+  let captures_rule state =
+    let captures =
+      SquareMap.fold
+        (fun o destinies captures ->
+          let lower =
+            SquareSet.elements destinies
+            |> List.map (fun t ->
+                   let resulting_pt =
+                     match SquareMap.find_opt t state.origins with
+                     | Some set when SquareSet.cardinal set = 1 ->
+                         if SquareSet.mem o set then
+                           let p = Position.piece_at_exn t state.pos in
+                           Some (Piece.piece_type p)
+                         else None
+                     | _ -> None
+                   in
+                   match
+                     Helpers.path_from_origin ~to_avoid:SquareSet.empty
+                       ~resulting_pt ~state o t
+                   with
+                   | None -> Int.max_int
+                   | Some (_, d) -> d)
+            |> List.fold_left min Int.max_int
+          in
+          if lower < Int.max_int then
+            let lower_o, upper_o = SquareMap.find o captures in
+            SquareMap.add o (max lower_o lower, upper_o) captures
+          else captures)
+        state.destinies state.captures
+    in
+    let nb_white = List.length (Position.white_pieces state.pos) in
+    let nb_black = List.length (Position.black_pieces state.pos) in
+    let white_cnt, black_cnt =
+      SquareMap.fold
+        (fun o (lower, _) (white_cnt, black_cnt) ->
+          if Piece.is_white @@ Board.(piece_at o initial |> Option.get) then
+            (white_cnt + lower, black_cnt)
+          else (white_cnt, black_cnt + lower))
+        captures (0, 0)
+    in
     let captures =
       SquareMap.mapi
-        (fun s origins ->
-          let pt =
-            Piece.piece_type (Position.piece_at s state.pos |> Option.get)
+        (fun o (lower, upper) ->
+          let new_upper =
+            if Piece.is_white @@ Board.(piece_at o initial |> Option.get) then
+              16 - nb_black - white_cnt + lower
+            else 16 - nb_white - black_cnt + lower
           in
-          SquareSet.elements origins
-          |> List.map (fun o ->
-                 match
-                   Helpers.path_from_origin ~to_avoid:SquareSet.empty
-                     ~resulting_pt:(Some pt) ~state o s
-                 with
-                 | None -> infty
-                 | Some (_, d) -> d)
-          |> List.fold_left min infty)
-        state.origins
+          (lower, min upper new_upper))
+        captures
     in
     { state with captures }
 
   (* The position is illegal if there are more captures required than
      pieces off the board. *)
   let too_many_captures_rule state =
-    let nb_necessary_captures_by_white, nb_necessary_captures_by_black =
-      Helpers.structural_necessary_captures state
-    in
     let nb_white = List.length (Position.white_pieces state.pos) in
     let nb_black = List.length (Position.black_pieces state.pos) in
+    let lower_bound_captures_by_c c =
+      let rank1 = Board.Rank.relative 1 c |> Square.rank_squares in
+      let rank2 = Board.Rank.relative 2 c |> Square.rank_squares in
+      List.fold_left
+        (fun n s -> n + fst (SquareMap.find s state.captures))
+        0 (rank1 @ rank2)
+    in
     if
-      nb_necessary_captures_by_black > 16 - nb_white
-      || nb_necessary_captures_by_white > 16 - nb_black
+      lower_bound_captures_by_c Black > 16 - nb_white
+      || lower_bound_captures_by_c White > 16 - nb_black
     then { state with illegal = true }
     else state
 
@@ -824,7 +808,7 @@ module Rules = struct
       static_king_rule;
       pawn_on_3rd_rank_rule;
       route_from_origin_rule;
-      captures_lower_bound_rule;
+      captures_rule;
       too_many_captures_rule;
       missing_rule;
       tombs_rule;

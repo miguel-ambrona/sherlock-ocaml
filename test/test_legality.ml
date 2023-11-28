@@ -329,7 +329,7 @@ module Internal = struct
             refine_origins_rule;
             static_mobility_rule;
             route_from_origin_rule;
-            captures_lower_bound_rule;
+            captures_rule;
           ]
       in
       List.iter
@@ -350,7 +350,7 @@ module Internal = struct
           ("4k2r/1ppppppp/p7/8/8/B7/PPPPP1PP/RN1QKBNR", [ (a3, f2) ], TBD);
         ]
 
-    let test_captures_lower_bound_rule () =
+    let test_captures_rule () =
       let rules =
         Rules.
           [
@@ -358,7 +358,9 @@ module Internal = struct
             origins_rule;
             refine_origins_rule;
             static_mobility_rule;
-            captures_lower_bound_rule;
+            route_from_origin_rule;
+            destinies_rule;
+            captures_rule;
           ]
       in
       List.iter
@@ -366,14 +368,15 @@ module Internal = struct
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let state = Rules.(apply (State.init pos) rules) in
           List.iter
-            (fun (s, n) -> assert (n = SquareMap.find s state.captures))
+            (fun (s, n) -> assert (n = fst (SquareMap.find s state.captures)))
             expected_captures)
         [
-          ("4k3/8/8/8/8/7P/7P/4K3", [ (h3, 1) ]);
-          ("4k3/8/8/8/7P/7P/7P/4K3", [ (h4, 2) ]);
-          ("4k3/P7/P7/8/1P6/2P5/P2P4/4K3", [ (a6, 4); (a7, 5) ]);
-          ("r3kb1r/1ppppppp/p7/8/8/B7/PP1PPPPP/RN1QKBNR", [ (a3, 3) ]);
-          ("r3k3/1ppppppp/8/p6R/8/8/PPPPP1PP/1NBQKBNR", [ (h5, 5) ]);
+          ("4k3/8/8/8/8/7P/7P/4K3", [ (g2, 1) ]);
+          ("4k3/8/8/8/7P/7P/7P/4K3", [ (g2, 1); (f2, 2) ]);
+          ("4k3/P7/P7/8/1P6/2P5/P2P4/4K3", [ (e2, 4); (f2, 5) ]);
+          ("r3kb1r/1ppppppp/p7/8/8/B7/PP1PPPPP/RN1QKBNR", [ (c2, 3) ]);
+          ("r3k3/1ppppppp/8/p6R/8/8/PPPPP1PP/1NBQKBNR", [ (f2, 5) ]);
+          ("r1bqkb1r/1ppppppp/8/2P5/8/8/PPPPP1PP/R1BQKB1R", [ (f2, 3) ]);
         ]
 
     let test_too_many_captures_rule () =
@@ -384,7 +387,9 @@ module Internal = struct
             origins_rule;
             refine_origins_rule;
             static_mobility_rule;
-            captures_lower_bound_rule;
+            route_from_origin_rule;
+            destinies_rule;
+            captures_rule;
             too_many_captures_rule;
           ]
       in
@@ -518,8 +523,7 @@ module Internal = struct
           test_case "static_king_rule" `Quick test_static_king_rule;
           test_case "pawn_on_3rd_rank_rule" `Quick test_pawn_on_3rd_rank_rule;
           test_case "route_from_origin_rule" `Quick test_route_from_origin_rule;
-          test_case "captures_lower_bound_rule" `Quick
-            test_captures_lower_bound_rule;
+          test_case "captures_rule" `Quick test_captures_rule;
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
           test_case "test_missing_rule" `Quick test_missing_rule;
           test_case "test_tombs_rule" `Quick test_tombs_rule;
@@ -542,7 +546,8 @@ module Internal = struct
                 refine_origins_rule;
                 static_mobility_rule;
                 route_from_origin_rule;
-                captures_lower_bound_rule;
+                destinies_rule;
+                captures_rule;
               ]
           in
           let pos = Position.of_fen (fen ^ " w - - 0 1") in

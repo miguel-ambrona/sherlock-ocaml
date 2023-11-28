@@ -54,6 +54,7 @@ module Matrix = struct
 end
 
 let print_state (state : State.t) =
+  let char_of_int n = if n < 10 then 48 - 64 + n else 81 - 64 + n in
   let static_matrix =
     SquareSet.fold (fun s -> Matrix.add s 24) state.static Matrix.empty
   in
@@ -67,10 +68,13 @@ let print_state (state : State.t) =
       state.origins
       (Matrix.empty, Matrix.empty, 1)
   in
-  let captures_matrix =
+  let lower_captures_matrix, upper_captures_matrix =
     SquareMap.fold
-      (fun s n -> Matrix.add s (48 - 64 + n))
-      state.captures Matrix.empty
+      (fun o (lower, upper) (m_lower, m_upper) ->
+        ( Matrix.add o (char_of_int lower) m_lower,
+          Matrix.add o (char_of_int upper) m_upper ))
+      state.captures
+      (Matrix.empty, Matrix.empty)
   in
   let missing_matrix (missing : State.uncertain_square_set) =
     List.fold_left
@@ -87,7 +91,7 @@ let print_state (state : State.t) =
     List.fold_left
       (fun matrix s ->
         let n = List.filter (Square.equal s) c_tombs |> List.length in
-        Matrix.add s (48 - 64 + n) matrix)
+        Matrix.add s (char_of_int n) matrix)
       Matrix.empty c_tombs
   in
   Format.printf "\n\n\n";
@@ -117,8 +121,9 @@ let print_state (state : State.t) =
           (String.concat ", "
              (SquareSet.elements ts |> List.map Square.to_string)))
     state.origins;
-  Format.printf ">> min_nb_captures:\n";
-  Matrix.print [ captures_matrix ];
+  Format.printf "\n";
+  Matrix.print [ lower_captures_matrix; upper_captures_matrix ];
+  Format.printf ">>  min_nb_captures   max_nb_captures\n\n";
   Format.printf ">> missing:\n";
   Matrix.print [ missing_matrix white_missing; missing_matrix black_missing ];
   Format.printf ">>     white (%d)          black (%d)\n" white_missing.cardinal
