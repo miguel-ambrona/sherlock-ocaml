@@ -105,9 +105,10 @@ let print_state (state : State.t) =
   Format.printf ">> destinies:\n";
   SquareMap.iter
     (fun o ts ->
-      Format.printf "%s -> {%s}\n" (Square.to_string o)
-        (String.concat ", "
-        @@ List.map Square.to_string (List.of_seq (SquareSet.to_seq ts))))
+      if not (SquareSet.mem o state.static) then
+        Format.printf "%s -> {%s}\n" (Square.to_string o)
+          (String.concat ", "
+          @@ List.map Square.to_string (List.of_seq (SquareSet.to_seq ts))))
     state.destinies;
   Format.printf ">>\n";
   SquareMap.iter
@@ -130,7 +131,7 @@ let print_state (state : State.t) =
     black_missing.cardinal;
   Format.printf ">>\n";
   Format.printf ">> tombs:\n";
-  Matrix.print [ tombs_matrix Color.White; tombs_matrix Color.Black ];
-  Format.printf ">>  black tombs (%d)   white tombs (%d)\n"
-    black_missing.cardinal white_missing.cardinal;
+  Matrix.print [ tombs_matrix Color.Black; tombs_matrix Color.White ];
+  Format.printf ">>  white tombs (%d)   black tombs (%d)\n"
+    white_missing.cardinal black_missing.cardinal;
   Format.printf ">>\n"

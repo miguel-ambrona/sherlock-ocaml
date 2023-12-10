@@ -166,6 +166,7 @@ let to_fen pos =
 
 let board pos = pos.board
 let turn pos = pos.turn
+let flip_turn pos = { pos with turn = Color.negate pos.turn }
 let en_passant pos = pos.en_passant
 let pieces pos = Board.to_pieces pos.board
 let white_pieces pos = List.filter (fun (p, _) -> Piece.is_white p) (pieces pos)

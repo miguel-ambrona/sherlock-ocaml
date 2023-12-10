@@ -97,9 +97,7 @@ module Internal = struct
             Position.piece_at s pos |> Option.map Piece.piece_type
           in
           let d =
-            Option.map snd
-            @@ Helpers.path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt
-                 ~state o s
+            Option.map snd @@ Helpers.path_from_origin ~resulting_pt ~state o s
           in
           assert (d = expected_distance))
         Square.
@@ -236,9 +234,7 @@ module Internal = struct
     let test_static_mobility_rule () =
       List.iter
         (fun (fen, s, reachable, unreachable) ->
-          let connected g s t =
-            Option.is_some @@ Mobility.path ~to_avoid:SquareSet.empty g s t
-          in
+          let connected g s t = Option.is_some @@ Mobility.path g s t in
           let pos = Position.of_fen (fen ^ " w - - 0 1") in
           let bP_in_s s = Position.piece_at s pos = Some Piece.bP in
           let static = List.filter bP_in_s Board.squares in
@@ -484,7 +480,7 @@ module Internal = struct
             [ g7; g7; f8 ],
             [] );
           ( "r2qkb1r/p1ppp1p1/1p3p1p/8/8/1B6/PPPPPPP1/RN1QKBNR w KQkq - ? 1",
-            [ g6; h7; g8 ],
+            [ h7; g8 ],
             [] );
           ( "rnbqkbnr/ppnppppp/8/8/8/8/PPPPPPP1/R3K3 w kq - ? 1",
             [],
@@ -492,6 +488,22 @@ module Internal = struct
           ( "r2qk2r/p1pppp1p/2p2p2/8/P6P/8/PP1PP1PP/R1BQKB1R w KQkq - ? 1",
             [ b3; a4; g3; h4 ],
             [ c6; f6 ] );
+          ( "r1bqkb1r/pppppppp/2n5/8/6P1/8/PPPPPPP1/RNBQKBNR w KQkq - ? 1",
+            [],
+            [] );
+        ]
+
+    let test_visiting_tombs_rule () =
+      List.iter
+        (fun (fen, legality) ->
+          let pos = Position.of_fen (fen ^ " ? 1") in
+          let state = Rules.(apply (State.init pos) all_rules) in
+          Debug.print_state state;
+          legality_assertion state legality)
+        [
+          ("r1bqkb1r/1ppppppp/8/2P5/8/8/PPPPP1PP/R1BQKB1R w KQkq -", Illegal);
+          ("r1bqkb1r/1ppppppp/8/2P5/8/8/PPPPP1PP/R1BQKB1R b KQkq -", TBD);
+          ("r1b1k2r/1pppp1pp/p5n1/7p/8/7n/PPPPPPPP/R1B1KBN1 b Qkq -", Illegal);
         ]
 
     let test_parity_rule () =
@@ -510,6 +522,9 @@ module Internal = struct
           ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQKBR1 b - -", TBD);
           ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQK2R b - -", TBD);
           ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQK2R b K -", Illegal);
+          ("r1bqkbnr/pppppppp/2n5/8/8/5P1P/PPPPP1P1/RNBQKBNR w KQkq -", Illegal);
+          ("r1bqkb1r/pppppppp/2n5/8/6P1/8/PPPPPPP1/RNBQKBNR w KQkq -", TBD);
+          ("r1b1k2r/1pppp1pp/p5n1/7p/8/7n/PPPPPPPP/R1B1KBN1 b Qkq -", Illegal);
         ]
 
     let tests =
@@ -527,6 +542,7 @@ module Internal = struct
           test_case "too_many_captures_rule" `Quick test_too_many_captures_rule;
           test_case "test_missing_rule" `Quick test_missing_rule;
           test_case "test_tombs_rule" `Quick test_tombs_rule;
+          test_case "test_visiting_tombs_rule" `Quick test_visiting_tombs_rule;
           test_case "test_parity_rule" `Quick test_parity_rule;
         ]
   end
