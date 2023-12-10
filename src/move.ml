@@ -121,7 +121,9 @@ let apply pos m =
     {
       board = new_board;
       turn = Color.negate pos.turn;
-      en_passant = (if is_double_push pos m then ep_square else None);
+      en_passant =
+        sanitize_en_passant new_board (Color.negate pos.turn)
+          (if is_double_push pos m then ep_square else None);
       castling_rights;
       halfmove_clock = increase_halfmove_clock pos.halfmove_clock;
       fullmove_number = (pos.fullmove_number + if Color.is_black c then 1 else 0);

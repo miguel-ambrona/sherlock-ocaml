@@ -85,14 +85,35 @@ let piece_graph p =
       let weight s t = if Square.(file s = file t) then 0 else 1 in
       slow_piece_graph ~weight (pawn_forward_targets c)
 
-let path ~to_avoid g s t =
-  if SquareSet.mem s to_avoid || SquareSet.mem t to_avoid then None
-  else
-    let g = SquareSet.fold (fun s g -> G.remove_vertex g s) to_avoid g in
-    try Some (Path.shortest_path g s t) with Not_found -> None
+let path ?edge_filter g s t =
+  let g =
+    match edge_filter with
+    | None -> g
+    | Some f ->
+        G.fold_edges_e
+          (fun (s, w, t) g -> if f (s, w, t) then g else G.remove_edge g s t)
+          g g
+  in
+  try Some (Path.shortest_path g s t) with Not_found -> None
 
 let filter_edges f g =
   G.fold_edges (fun s t g -> if f s t then g else G.remove_edge g s t) g g
+
+let capture_squares g s t =
+  let path g s t =
+    try Some (fst @@ Path.shortest_path g s t) with Not_found -> None
+  in
+  match path g s t with
+  | None -> SquareSet.empty
+  | Some path_edges ->
+      List.filter_map
+        (fun (s1, w, s2) ->
+          if w = 0 then None
+          else
+            let g' = G.remove_edge_e g (s1, w, s2) in
+            if Option.is_none (path g' s t) then Some s2 else None)
+        path_edges
+      |> SquareSet.of_list
 
 (* This function returns Some b iff all paths from s to t in g use a number of
    edges whose parity matches the one of b (b will always be 0 or 1).

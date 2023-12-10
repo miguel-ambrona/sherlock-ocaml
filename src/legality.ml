@@ -84,11 +84,19 @@ module State = struct
   }
 
   let init pos =
+    let all_squares = SquareSet.of_list Board.squares in
     {
       pos;
       static = SquareSet.empty;
       origins = SquareMap.empty;
-      destinies = SquareMap.empty;
+      destinies =
+        List.fold_left
+          (fun acc r ->
+            List.fold_left
+              (fun acc s -> SquareMap.add s all_squares acc)
+              acc
+              (Board.Rank.relative r White |> Square.rank_squares))
+          SquareMap.empty [ 1; 2; 7; 8 ];
       captures =
         List.fold_left
           (fun acc r ->
@@ -222,13 +230,14 @@ module Helpers = struct
      If this piece is a pawn and [resulting_pt = Some pt] with [pt <> Pawn],
      the pawn must promote to the specified piece type before getting to
      [target], if possible.
-     [to_avoid] is a set of squares to be avoided in the path.
+     [edge_filter] is a function from edge to bool that indicates whether the
+     edge should be considered in the analysis (true) or not (false).
 
      When a path is found, this function returns the number of pawn captures in
      the path as a second argument. *)
   let path_from_origin ~(resulting_pt : Piece.piece_type option)
-      ~(to_avoid : SquareSet.t) ~(state : State.t) origin target =
-    let path = Mobility.path ~to_avoid in
+      ?(edge_filter = Fun.const true) ~(state : State.t) origin target =
+    let path = Mobility.path ~edge_filter in
     let p = Position.piece_at_exn origin Position.initial in
     let p_graph = PieceMap.find p state.mobility in
     let c = Piece.color p in
@@ -275,23 +284,24 @@ module Helpers = struct
      [target], if possible. *)
   let capturing_squares_in_path ~(resulting_pt : Piece.piece_type option)
       ~(state : State.t) origin target =
-    match
-      path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt ~state origin
-        target
-    with
+    match path_from_origin ~resulting_pt ~state origin target with
     | None -> SquareSet.empty
     | Some (_, 0) -> SquareSet.empty
     | Some (path, _) ->
         let _, bound = SquareMap.find origin state.captures in
-        List.filter_map (fun (_, w, t) -> if w = 1 then Some t else None) path
+        List.filter_map
+          (fun (_, w, t) ->
+            if w <> 1 then None
+            else
+              let edge_filter (_, w', t') = not (w' = 1 && t' = t) in
+              match
+                path_from_origin ~edge_filter ~resulting_pt ~state origin target
+              with
+              | None -> Some t
+              | Some (_, d) when d > bound -> Some t
+              | _ -> None)
+          path
         |> SquareSet.of_list
-        |> SquareSet.filter (fun s ->
-               match
-                 path_from_origin ~to_avoid:(SquareSet.singleton s)
-                   ~resulting_pt ~state origin target
-               with
-               | None -> true
-               | Some (_, d) -> d > bound)
 
   (* If the set cardinal matches the total number of possible elements,
      we have found them all. *)
@@ -482,10 +492,7 @@ module Rules = struct
     let destinies =
       let is_reachable o t =
         let _, bound = SquareMap.find o state.captures in
-        match
-          Helpers.path_from_origin ~to_avoid:SquareSet.empty ~resulting_pt:None
-            ~state o t
-        with
+        match Helpers.path_from_origin ~resulting_pt:None ~state o t with
         | None -> false
         | Some (_, d) -> d <= bound
       in
@@ -524,11 +531,16 @@ module Rules = struct
            retract pawns *)
         let connected =
           let first_loc = List.hd knight_locs in
-          let to_avoid =
+          let squares_to_avoid =
             List.filter
               (fun (p, _) -> Piece.piece_type p = Piece.pawn)
               (Position.pieces state.pos)
             |> List.map snd |> SquareSet.of_list
+          in
+          let edge_filter (s, _, t) =
+            not
+              (SquareSet.mem s squares_to_avoid
+              && SquareSet.mem t squares_to_avoid)
           in
           let knight_graph =
             PieceMap.find
@@ -536,14 +548,19 @@ module Rules = struct
               state.mobility
           in
           let connected s t =
-            Option.is_some @@ Mobility.path ~to_avoid knight_graph s t
+            Option.is_some @@ Mobility.path ~edge_filter knight_graph s t
           in
           List.fold_left
             (fun (acc, s1) s2 -> (acc && connected s1 s2, s2))
             (true, first_loc) (List.tl knight_locs)
           |> fst
         in
-        if not connected then origins
+        (* If they are not connected, but there are 2 candidate origins in all
+           knights, we can also assume wlog their location *)
+        if
+          (not connected)
+          && SquareMap.exists (fun _ set -> SquareSet.cardinal set <> 2) knights
+        then origins
         else
           let knight_origins =
             SquareMap.fold (fun _ -> SquareSet.union) knights SquareSet.empty
@@ -633,8 +650,7 @@ module Rules = struct
           SquareSet.filter (fun o ->
               let _, bound = SquareMap.find o state.captures in
               match
-                Helpers.path_from_origin ~to_avoid:SquareSet.empty
-                  ~resulting_pt:(Some pt) ~state o s
+                Helpers.path_from_origin ~resulting_pt:(Some pt) ~state o s
               with
               | None -> false
               | Some (_, d) -> d <= bound))
@@ -661,10 +677,7 @@ module Rules = struct
                          else None
                      | _ -> None
                    in
-                   match
-                     Helpers.path_from_origin ~to_avoid:SquareSet.empty
-                       ~resulting_pt ~state o t
-                   with
+                   match Helpers.path_from_origin ~resulting_pt ~state o t with
                    | None -> Int.max_int
                    | Some (_, d) -> d)
             |> List.fold_left min Int.max_int
@@ -736,6 +749,7 @@ module Rules = struct
     let empty_tombs =
       Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq
     in
+    (* Tombs due to exsiting pieces *)
     let tombs =
       SquareMap.fold
         (fun s origins tombs ->
@@ -755,7 +769,82 @@ module Rules = struct
           ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
         state.origins empty_tombs
     in
+    (* Tombs due to potentially missing pieces *)
+    let tombs =
+      let definitely_missing =
+        SquareSet.union (ColorMap.find Color.White state.missing).definite
+          (ColorMap.find Color.Black state.missing).definite
+      in
+      SquareMap.fold
+        (fun o destinies tombs ->
+          let c =
+            if
+              Square.in_relative_rank 1 Color.White o
+              || Square.in_relative_rank 2 Color.White o
+            then Color.White
+            else Color.Black
+          in
+          if not (SquareSet.mem o definitely_missing) then tombs
+          else
+            let p_tombs =
+              SquareSet.fold
+                (fun t ->
+                  SquareSet.inter
+                    (Helpers.capturing_squares_in_path ~resulting_pt:None ~state
+                       o t))
+                destinies
+                (SquareSet.of_list Board.squares)
+              |> SquareSet.elements
+            in
+            ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
+        state.destinies tombs
+    in
     { state with tombs }
+
+  (* It should be possible to assign to every tomb a missing piece that can
+     actually reach that tomb. If it is not possible, the position is illegal.
+     This way we can also deduce the destiny of some pieces. *)
+  let visiting_tombs_rules state =
+    let refine_destinies c state =
+      let tombs = ColorMap.find (Color.negate c) state.tombs in
+      let definitely_missing = (ColorMap.find c state.missing).definite in
+      let assignments =
+        List.map
+          (fun tomb ->
+            SquareMap.filter
+              (fun o o_destinies ->
+                (Square.in_relative_rank 1 c o || Square.in_relative_rank 2 c o)
+                && SquareSet.mem tomb o_destinies
+                && SquareSet.mem o definitely_missing)
+              state.destinies
+            |> SquareMap.bindings |> List.map fst |> SquareSet.of_list)
+          tombs
+      in
+      List.fold_left
+        (fun state (id_tombs, candidate_missing) ->
+          let id_tombs = SquareSet.of_list id_tombs in
+          match
+            Int.compare
+              (SquareSet.cardinal candidate_missing)
+              (SquareSet.cardinal id_tombs)
+          with
+          | -1 -> { state with illegal = true }
+          | 0 ->
+              {
+                state with
+                destinies =
+                  SquareMap.mapi
+                    (fun o ts ->
+                      if SquareSet.mem o candidate_missing then
+                        SquareSet.inter id_tombs ts
+                      else ts)
+                    state.destinies;
+              }
+          | _ -> state)
+        state
+        (Helpers.k_groups @@ List.combine tombs assignments)
+    in
+    state |> refine_destinies Color.White |> refine_destinies Color.Black
 
   (* If the parity of the number of moves made by each side can be determined,
      the side to move must be consistent with such parity, if it is not, the
@@ -812,6 +901,7 @@ module Rules = struct
       too_many_captures_rule;
       missing_rule;
       tombs_rule;
+      visiting_tombs_rules;
       parity_rule;
     ]
 
@@ -820,6 +910,50 @@ module Rules = struct
     if State.equal state new_state then state else apply new_state rules
 end
 
-let is_legal pos =
-  let state = Rules.(apply (State.init pos) all_rules) in
-  not state.illegal
+let illegal_check pos = Position.(is_check (flip_turn pos))
+
+let is_legal_aux pos =
+  if illegal_check pos then false
+  else
+    let state = Rules.(apply (State.init pos) all_rules) in
+    not state.illegal
+
+let has_limited_retractions pos =
+  let rs = Retraction.pseudo_legal_retractions pos in
+  not
+  @@ List.exists
+       (fun r ->
+         Retraction.retracted_piece pos r <> Piece.pawn
+         && List.exists (Fun.negate illegal_check) (Retraction.apply pos r))
+       rs
+
+module FenMap = Map.Make (String)
+
+let table = ref FenMap.empty
+let fetch fen = FenMap.find_opt fen !table
+let save fen result = table := FenMap.add fen result !table
+
+let dangerous_retractions pos =
+  has_limited_retractions pos
+  || has_limited_retractions (Position.flip_turn pos)
+
+let rec is_legal pos =
+  let fen = Position.to_fen { pos with fullmove_number = 0 } in
+  match fetch fen with
+  | Some res -> res
+  | None ->
+      (* Save false for now, we will rewrite this result *)
+      save fen false;
+      let res =
+        if not @@ is_legal_aux pos then false
+        else if dangerous_retractions pos then (
+          Format.printf "%s\n" @@ Position.to_fen pos;
+          Format.print_flush ();
+          List.exists is_legal (Retraction.retracted pos))
+        else (
+          Format.printf "%s true!\n" @@ Position.to_fen pos;
+          Format.print_flush ();
+          true)
+      in
+      save fen res;
+      res
