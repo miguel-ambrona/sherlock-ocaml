@@ -92,7 +92,35 @@ module RuleSpecificCompositions = struct
     Debug.print_state state;
     assert state.illegal
 
-  let tests = Alcotest.[ test_case "static_king" `Quick test_static_king ]
+  let test_parity () =
+    (* let fen = "rnbqkb1r/pppppppp/8/8/8/4P3/PPPPP1PP/RNBQKBNR b KQkq - 0 1" in *)
+    let _fen =
+      "Nrb1kb1r/pp1ppppp/1p4n1/8/2q3n1/P4P2/1PPPP1PP/R1BQKB1R w KQkq - ? 1"
+    in
+    let _fen =
+      "Nrb1kb1r/pp1ppp1p/1p3pn1/8/6n1/P6P/1PPPP1P1/RqBQKB1R b KQk - ? 1"
+      (* This logic still needs to handle the illegality of this:
+         Nrb1kb1r/pp1ppppp/1p3Nn1/8/6n1/P7/1PPPP1PP/RqBQKB1R b KQk - ? 0 true! *)
+    in
+    (* The next one run into trouble, knights appeared and kept being retracted *)
+    (* RUNNING THIS NOW, UPDATE WHEN FINISHED! *)
+    (* let fen = "2kr1b1r/npp1pppp/1pp5/1n6/8/P6b/1PPPPPP1/R1BQKB1R w KQ - ? 1" in *)
+    (* The next one is fine, it understands it is not illegal, but it takes some time *)
+    let _fen = "r3kb1r/npp1pppp/1pp5/1n6/8/P6b/1PPPPPP1/R1BQKB1R b KQq - ? 1" in
+    (* We found that the following is illegal! But it takes some time *)
+    (* let fen = "r1bqkb1r/1pppppp1/p6B/8/1N6/1PP5/NPP1PPPP/2KR1B1R w kq - ? 1" in *)
+    let fen =
+      "1Nbqkb1r/r1ppp1p1/p1p2p1p/8/8/8/PPPPPPPP/RnBQKBnR w KQk - ? 14"
+    in
+    let pos = Position.of_fen fen in
+    assert (not @@ is_legal pos)
+
+  let tests =
+    Alcotest.
+      [
+        test_case "static_king" `Quick test_static_king;
+        test_case "parity" `Quick test_parity;
+      ]
 end
 
 let () =

@@ -524,6 +524,8 @@ module Internal = struct
           ("rnbqkbnr/1ppppppp/p7/8/8/P4N1P/1PPPPPP1/RNBQK2R b K -", Illegal);
           ("r1bqkbnr/pppppppp/2n5/8/8/5P1P/PPPPP1P1/RNBQKBNR w KQkq -", Illegal);
           ("r1bqkb1r/pppppppp/2n5/8/6P1/8/PPPPPPP1/RNBQKBNR w KQkq -", TBD);
+          (* The following is not about the parity rule, but the limited retractions technique *)
+          (* ("r1b1k2r/ppppp1pp/6n1/7p/8/8/PPPPPPPP/R1B1KBn1 w Qkq -", Illegal); *)
           ("r1b1k2r/1pppp1pp/p5n1/7p/8/7n/PPPPPPPP/R1B1KBN1 b Qkq -", Illegal);
         ]
 
@@ -584,11 +586,17 @@ module Internal = struct
             [ (d4, d7); (c5, c7) ] );
         ]
 
+    let weird () =
+      let fen = "r1b1k2r/1pppp1pp/p5n1/7p/8/8/PPPPPPPP/R1B1KBn1 w Qkq - ? 1" in
+      let pos = Position.of_fen fen in
+      assert (not @@ Legality.is_legal pos)
+
     let tests =
       Alcotest.
         [
           test_case "test_origins_with_captures_lower_bound" `Quick
             test_origins_with_captures_lower_bound;
+          test_case "weird" `Quick weird;
         ]
   end
 end
