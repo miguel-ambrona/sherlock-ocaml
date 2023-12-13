@@ -2,6 +2,6 @@
 
 (tests
  (names test_color test_board test_position test_move test_retraction
-   test_legality test_compositions)
+   test_legality test_compositions vampires)
  (package sherlock)
  (libraries chess alcotest))

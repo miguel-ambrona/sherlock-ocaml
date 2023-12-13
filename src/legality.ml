@@ -807,7 +807,7 @@ module Rules = struct
   let visiting_tombs_rules state =
     let refine_destinies c state =
       let tombs = ColorMap.find (Color.negate c) state.tombs in
-      let definitely_missing = (ColorMap.find c state.missing).definite in
+      let missing = ColorMap.find c state.missing in
       let assignments =
         List.map
           (fun tomb ->
@@ -815,11 +815,14 @@ module Rules = struct
               (fun o o_destinies ->
                 (Square.in_relative_rank 1 c o || Square.in_relative_rank 2 c o)
                 && SquareSet.mem tomb o_destinies
-                && SquareSet.mem o definitely_missing)
+                && SquareSet.mem o missing.definite)
               state.destinies
             |> SquareMap.bindings |> List.map fst |> SquareSet.of_list)
           tombs
       in
+      (* This rule can be improved, we can apply it even when the missing set
+         is not completely determined, by filtering out all the pieces that
+         cannot go to a square *)
       List.fold_left
         (fun state (id_tombs, candidate_missing) ->
           let id_tombs = SquareSet.of_list id_tombs in
@@ -828,8 +831,12 @@ module Rules = struct
               (SquareSet.cardinal candidate_missing)
               (SquareSet.cardinal id_tombs)
           with
-          | -1 -> { state with illegal = true }
-          | 0 ->
+          | -1 when SquareSet.is_empty missing.candidates ->
+              (* If there are less candidate missing pieces than tombs, the
+                 position is illegal, but only if the set of missing pieces
+                 is definitely known. *)
+              { state with illegal = true }
+          | 0 when SquareSet.is_empty missing.candidates ->
               {
                 state with
                 destinies =
@@ -942,18 +949,43 @@ let rec is_legal pos =
   match fetch fen with
   | Some res -> res
   | None ->
-      (* Save false for now, we will rewrite this result *)
+      (* Save false for now, we will rewrite this result. *)
       save fen false;
       let res =
-        if not @@ is_legal_aux pos then false
-        else if dangerous_retractions pos then (
-          Format.printf "%s\n" @@ Position.to_fen pos;
-          Format.print_flush ();
-          List.exists is_legal (Retraction.retracted pos))
-        else (
-          Format.printf "%s true!\n" @@ Position.to_fen pos;
-          Format.print_flush ();
-          true)
+        if illegal_check pos then false
+        else
+          let state = Rules.(apply (State.init pos) all_rules) in
+          if state.illegal then false
+          else if dangerous_retractions pos then
+            (* Filter the possible retractions, ignore new uncaptures that
+               are inconsistent with the information in state *)
+            let rs = Retraction.pseudo_legal_retractions pos in
+            let rs =
+              let c = Position.turn pos in
+              let missing = ColorMap.find c state.missing in
+              let tombs = ColorMap.find (Color.negate c) state.tombs in
+              if
+                missing.cardinal = SquareSet.cardinal missing.definite
+                && missing.cardinal = List.length tombs
+              then
+                List.filter
+                  (fun r ->
+                    if Retraction.is_uncapture r then
+                      List.exists (fun s -> s = Retraction.target r) tombs
+                    else true)
+                  rs
+              else rs
+            in
+            let retracted =
+              List.concat_map (fun r -> Retraction.apply pos r) rs
+            in
+            (* Format.printf "%s\n" @@ Position.to_fen pos; *)
+            (* Format.print_flush (); *)
+            List.exists is_legal retracted
+          else
+            (* let _ = Format.printf "%s true!\n" @@ Position.to_fen pos in *)
+            (* Format.print_flush (); *)
+            true
       in
       save fen res;
       res
