@@ -352,10 +352,10 @@ let piece_retractions pos (p, t) =
   | _ -> (
       if
         (t = a1 && cr.white_long)
-        || (t = e1 && (cr.white_long || cr.white_long))
+        || (t = e1 && (cr.white_long || cr.white_short))
         || (t = h1 && cr.white_short)
         || (t = a8 && cr.black_long)
-        || (t = e8 && (cr.black_long || cr.black_long))
+        || (t = e8 && (cr.black_long || cr.black_short))
         || (t = h8 && cr.black_short)
       then []
       else
