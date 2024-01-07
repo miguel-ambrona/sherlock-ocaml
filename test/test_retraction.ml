@@ -241,6 +241,7 @@ module Test_Retraction = struct
         ("8/6k1/7P/7P/8/8/8/4K3 b - - 0 53", 5);
         ("8/8/8/8/8/8/4PP1n/2k1K3 b - - 0 57", 4);
         ("8/8/8/4ppPp/5rpb/8/4PP1n/2k1K3 b - - 0 57", 12);
+        ("4k2r/8/2P1P1P1/2PpKpP1/8/8/8/8 w k - ? 60", 0);
       ]
 
   let tests =
