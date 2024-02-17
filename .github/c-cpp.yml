@@ -1,0 +1,28 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Dependencies
+    - run: apt-get update
+    - run: apt-get install -y --no-install-recommends opam git ca-certificates curl z3
+    - run: opam init -y --bare --disable-sandboxing
+    - run: ./scripts/install_build_deps.sh
+    - name: Build
+    - run: eval $(opam env)
+    - run: OPAMCONFIRMLEVEL=unsafe-yes opam install . --depext-only
+    - run: dune build
+    - run: ./scripts/check_opam_files.sh
+    - run: dune build @fmt
+    - name: Test
+    - run: dune build @runtest
