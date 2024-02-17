@@ -63,7 +63,7 @@ module SmullyanCompositions = struct
     let fen = "4k3/5p2/2q5/8/8/6B1/1P1P1K2/8 w - - 0 1" in
     let rules = Condition.no_promotions :: Rules.all_rules in
     let state = Rules.(apply (State.init @@ Position.of_fen fen) rules) in
-    assert state.illegal
+    assert (Option.is_some state.illegal)
 
   let test_which_color () =
     let rules = Condition.monochromatic :: Rules.all_rules in
@@ -71,7 +71,7 @@ module SmullyanCompositions = struct
       (fun (fen, illegal) ->
         let state = Rules.(apply (State.init @@ Position.of_fen fen) rules) in
         Debug.print_state state;
-        assert (state.illegal = illegal))
+        assert (Option.is_some state.illegal = illegal))
       [
         ("4k3/8/8/8/1K6/6P1/3P1P2/8 w - - 0 1", true);
         ("4k3/8/8/8/1K6/6p1/3P1P2/8 w - - 0 1", false);
@@ -90,7 +90,7 @@ module RuleSpecificCompositions = struct
     let fen = "r3k3/ppp1p1pp/8/8/8/8/8/R1R1K2R w KQq - 0 1" in
     let state = Rules.(apply (State.init @@ Position.of_fen fen) all_rules) in
     Debug.print_state state;
-    assert state.illegal
+    assert (Option.is_some state.illegal)
 
   let tests = Alcotest.[ test_case "static_king" `Quick test_static_king ]
 end

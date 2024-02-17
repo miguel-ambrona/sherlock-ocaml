@@ -80,7 +80,7 @@ module State = struct
     mobility : Mobility.G.t PieceMap.t;
     missing : uncertain_square_set ColorMap.t;
     tombs : Square.t list ColorMap.t;
-    illegal : bool;
+    illegal : string option;
   }
 
   let init pos =
@@ -126,7 +126,7 @@ module State = struct
         |> List.to_seq |> ColorMap.of_seq;
       tombs =
         Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq;
-      illegal = false;
+      illegal = None;
     }
 
   type perspective = Existing | Missing
@@ -147,7 +147,7 @@ module State = struct
     && PieceMap.equal same_nb_edges s1.mobility s2.mobility
     && SquareMap.equal ( = ) s1.captures s2.captures
     && ColorMap.equal equal_uncertain_square_set s1.missing s2.missing
-    && Bool.equal s1.illegal s2.illegal
+    && Option.equal String.equal s1.illegal s2.illegal
 end
 
 module Helpers = struct
@@ -311,6 +311,38 @@ module Helpers = struct
     let definite = if found_all then all else usset.definite in
     let candidates = SquareSet.diff usset.candidates definite in
     { usset with definite; candidates }
+
+  (* Computes a lower bound on the number of captures to reach a pawn
+     structure encoded as a list of 8 integers, one for each file, indicating
+     the number of pawns in that file. *)
+  let rec min_nb_captures_for_pawn_structure pawns_per_file =
+    let labeled_files = List.mapi (fun i n -> (i, n)) pawns_per_file in
+    let empty_files = List.filter (fun (_, n) -> n = 0) labeled_files in
+    let busy_files = List.filter (fun (_, n) -> n > 1) labeled_files in
+    match busy_files with
+    | [] -> 0
+    | (i, _) :: _ ->
+        let free_on_the_left = List.filter (fun (j, _) -> j < i) empty_files in
+        let free_on_the_right = List.filter (fun (j, _) -> j > i) empty_files in
+        let min_nb_captures_if_left =
+          match List.rev free_on_the_left with
+          | [] -> 16
+          | (j, _) :: _ ->
+              let array = Array.of_list pawns_per_file in
+              array.(j) <- 1;
+              array.(i) <- array.(i) - 1;
+              i - j + min_nb_captures_for_pawn_structure (Array.to_list array)
+        in
+        let min_nb_captures_if_right =
+          match free_on_the_right with
+          | [] -> 16
+          | (j, _) :: _ ->
+              let array = Array.of_list pawns_per_file in
+              array.(j) <- 1;
+              array.(i) <- array.(i) - 1;
+              j - i + min_nb_captures_for_pawn_structure (Array.to_list array)
+        in
+        min min_nb_captures_if_left min_nb_captures_if_right
 end
 
 module Rules = struct
@@ -399,8 +431,62 @@ module Rules = struct
       || nb_wPs > 8 || nb_bPs > 8
       || 8 - nb_wPs < lbound_promoted_white
       || 8 - nb_bPs < lbound_promoted_black
-    then { state with illegal = true }
+    then { state with illegal = Some "material" }
     else state
+
+  (* Computes a bound on the minimum number of captures needed to reach
+     the current pawn structure in the position, it updates the [captures]
+     field accordingly. *)
+  let pawn_structure_rule state =
+    let pawns_per_file c =
+      let array = [| 0; 0; 0; 0; 0; 0; 0; 0 |] in
+      List.iter
+        (fun (p, s) ->
+          if Piece.piece_type p = Piece.pawn then
+            array.(Square.file s) <- array.(Square.file s) + 1)
+        (Position.color_pieces c state.pos);
+      Array.to_list array
+    in
+    let min_nb_officer_captures_by c =
+      SquareMap.fold
+        (fun s (lower, _upper) cnt ->
+          if Square.in_relative_rank 8 c s then cnt + lower else cnt)
+        state.captures 0
+    in
+    let white_pawns = pawns_per_file Color.White in
+    let black_pawns = pawns_per_file Color.Black in
+    let min_nb_pawn_captures_by_white =
+      Helpers.min_nb_captures_for_pawn_structure white_pawns
+    in
+    let min_nb_pawn_captures_by_black =
+      Helpers.min_nb_captures_for_pawn_structure black_pawns
+    in
+    let min_captured_by_white =
+      min_nb_pawn_captures_by_white + min_nb_officer_captures_by Color.White
+    in
+    let min_captured_by_black =
+      min_nb_pawn_captures_by_black + min_nb_officer_captures_by Color.Black
+    in
+    let nb_white_missing = 16 - List.length (Position.white_pieces state.pos) in
+    let nb_black_missing = 16 - List.length (Position.black_pieces state.pos) in
+    if
+      min_captured_by_white > nb_black_missing
+      || min_captured_by_black > nb_white_missing
+    then { state with illegal = Some "pawn structure" }
+    else
+      let captures =
+        SquareMap.mapi
+          (fun s (lower, upper) ->
+            if Square.in_relative_rank 1 Color.White s then
+              ( lower,
+                min upper (nb_black_missing - min_nb_pawn_captures_by_white) )
+            else if Square.in_relative_rank 1 Color.Black s then
+              ( lower,
+                min upper (nb_white_missing - min_nb_pawn_captures_by_black) )
+            else (lower, upper))
+          state.captures
+      in
+      { state with captures }
 
   (* The candidate origin squares of a piece are determined based on the
      initial position of chess. Queens, Rooks, Bishops or Knights may also
@@ -453,12 +539,17 @@ module Rules = struct
             { usset with candidates = SquareSet.diff usset.candidates to_rm })
           state.missing
       in
-      let illegal =
+      let is_illegal =
         ColorMap.exists
           (fun _ usset -> not SquareSet.(is_empty (inter usset.definite to_rm)))
           state.missing
       in
-      { state with origins; missing; illegal = state.illegal || illegal }
+      let illegal =
+        match state.illegal with
+        | None when is_illegal -> Some "refine origins rule"
+        | _ -> state.illegal
+      in
+      { state with origins; missing; illegal }
     in
     let groups =
       let is_white (s, _) = Position.white_piece_at s state.pos in
@@ -469,7 +560,7 @@ module Rules = struct
       (fun state (ids, set) ->
         let ids = SquareSet.of_list ids in
         match Int.compare (SquareSet.cardinal set) (SquareSet.cardinal ids) with
-        | -1 -> { state with illegal = true }
+        | -1 -> { state with illegal = Some "refine origins rule" }
         | 0 -> remove_origins ids set state
         | _ -> state)
       state groups
@@ -745,7 +836,7 @@ module Rules = struct
     if
       lower_bound_captures_by_c Black > 16 - nb_white
       || lower_bound_captures_by_c White > 16 - nb_black
-    then { state with illegal = true }
+    then { state with illegal = Some "too many captures" }
     else state
 
   (* The starting squares that do not appear in the origins of any piece on
@@ -827,6 +918,10 @@ module Rules = struct
     let refine_destinies c state =
       let tombs = ColorMap.find (Color.negate c) state.tombs in
       let definitely_missing = (ColorMap.find c state.missing).definite in
+      let candidate_missing = (ColorMap.find c state.missing).candidates in
+      let missing_pieces =
+        SquareSet.union definitely_missing candidate_missing
+      in
       let assignments =
         List.map
           (fun tomb ->
@@ -834,27 +929,27 @@ module Rules = struct
               (fun o o_destinies ->
                 (Square.in_relative_rank 1 c o || Square.in_relative_rank 2 c o)
                 && SquareSet.mem tomb o_destinies
-                && SquareSet.mem o definitely_missing)
+                && SquareSet.mem o missing_pieces)
               state.destinies
             |> SquareMap.bindings |> List.map fst |> SquareSet.of_list)
           tombs
       in
       List.fold_left
-        (fun state (id_tombs, candidate_missing) ->
+        (fun state (id_tombs, tomb_missing) ->
           let id_tombs = SquareSet.of_list id_tombs in
           match
             Int.compare
-              (SquareSet.cardinal candidate_missing)
+              (SquareSet.cardinal tomb_missing)
               (SquareSet.cardinal id_tombs)
           with
-          | -1 -> { state with illegal = true }
+          | -1 -> { state with illegal = Some "visiting tombs" }
           | 0 ->
               {
                 state with
                 destinies =
                   SquareMap.mapi
                     (fun o ts ->
-                      if SquareSet.mem o candidate_missing then
+                      if SquareSet.mem o tomb_missing then
                         SquareSet.inter id_tombs ts
                       else ts)
                     state.destinies;
@@ -901,13 +996,14 @@ module Rules = struct
     | Some n ->
         (* The parity of halfmoves is even iff it is White to move *)
         if (n + if Position.is_white_to_move state.pos then 1 else 0) mod 2 = 0
-        then { state with illegal = true }
+        then { state with illegal = Some "parity" }
         else state
 
   let all_rules =
     [
       static_rule;
       material_rule;
+      pawn_structure_rule;
       origins_rule;
       refine_origins_rule;
       destinies_rule;
@@ -926,6 +1022,8 @@ module Rules = struct
     ]
 
   let rec apply state rules =
+    (* if Option.is_some state.illegal then state *)
+    (* else *)
     let new_state = List.fold_left (fun s r -> r s) state rules in
     if State.equal state new_state then state else apply new_state rules
 end
@@ -936,7 +1034,7 @@ let is_legal_aux pos =
   if illegal_check pos then false
   else
     let state = Rules.(apply (State.init pos) all_rules) in
-    not state.illegal
+    Option.is_none state.illegal
 
 let has_limited_retractions pos =
   let rs = Retraction.pseudo_legal_retractions pos in
@@ -957,7 +1055,7 @@ let dangerous_retractions pos =
   has_limited_retractions pos
   || has_limited_retractions (Position.flip_turn pos)
 
-let rec is_legal pos =
+let is_legal pos =
   let fen = Position.to_fen { pos with fullmove_number = 0 } in
   match fetch fen with
   | Some res -> res
@@ -966,14 +1064,14 @@ let rec is_legal pos =
       save fen false;
       let res =
         if not @@ is_legal_aux pos then false
-        else if dangerous_retractions pos then (
-          Format.printf "%s\n" @@ Position.to_fen pos;
-          Format.print_flush ();
-          List.exists is_legal (Retraction.retracted pos))
-        else (
-          Format.printf "%s true!\n" @@ Position.to_fen pos;
-          Format.print_flush ();
-          true)
+        else if dangerous_retractions pos then
+          (* Format.printf "%s\n" @@ Position.to_fen pos; *)
+          (* Format.print_flush (); *)
+          List.exists is_legal_aux (Retraction.retracted pos)
+        else
+          (* Format.printf "%s true!\n" @@ Position.to_fen pos; *)
+          (* Format.print_flush (); *)
+          true
       in
       save fen res;
       res

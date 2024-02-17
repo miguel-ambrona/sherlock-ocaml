@@ -96,7 +96,8 @@ let print_state (state : State.t) =
   in
   Format.printf "\n\n\n";
   Format.printf ">> pos: %s\n" @@ Position.to_fen state.pos;
-  Format.printf ">> proven illegal: %b\n" state.illegal;
+  Format.printf ">> proven illegal: %s\n"
+  @@ Option.value ~default:"?" state.illegal;
   Format.printf ">> static:\n";
   Matrix.print [ static_matrix ];
   Format.printf ">> origins:\n";

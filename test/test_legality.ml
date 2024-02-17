@@ -29,8 +29,8 @@ module Internal = struct
   type legality = Illegal | TBD
 
   let legality_assertion (state : State.t) = function
-    | Illegal -> assert state.illegal
-    | TBD -> assert (not state.illegal)
+    | Illegal -> assert (Option.is_some state.illegal)
+    | TBD -> assert (Option.is_none state.illegal)
 
   let lacks_edge g (s, t) =
     try
@@ -130,12 +130,31 @@ module Internal = struct
             ("8/1ppppppp/p5p1/8/8/p1p5/3p4/8", d1, g8, Some 0);
           ]
 
+    let test_min_nb_captures_for_pawn_structure () =
+      List.iter
+        (fun (pawn_structure, expected) ->
+          assert (
+            expected = Helpers.min_nb_captures_for_pawn_structure pawn_structure))
+        [
+          ([ 2; 1; 0; 3; 1; 0; 0; 0 ], 7);
+          ([ 1; 3; 2; 2; 0; 0; 0; 0 ], 15);
+          ([ 3; 0; 0; 3; 0; 0; 0; 0 ], 6);
+          ([ 0; 3; 0; 0; 3; 0; 0; 0 ], 4);
+          ([ 0; 3; 0; 1; 3; 0; 0; 0 ], 5);
+          ([ 0; 0; 0; 2; 2; 0; 2; 1 ], 5);
+          ([ 2; 1; 1; 1; 1; 1; 1; 0 ], 7);
+          ([ 2; 0; 1; 1; 1; 1; 1; 1 ], 1);
+          ([ 1; 1; 1; 1; 1; 1; 1; 1 ], 0);
+        ]
+
     let tests =
       Alcotest.
         [
           test_case "pawn_candidate_origins" `Quick test_pawn_candidate_origins;
           test_case "k_groups" `Quick test_k_groups;
           test_case "path_from_origin" `Quick test_path_from_origin;
+          test_case "min_nb_captures_for_pawn_structure" `Quick
+            test_min_nb_captures_for_pawn_structure;
         ]
   end
 
@@ -174,6 +193,18 @@ module Internal = struct
           ("rnbqkbnr/pppppppp/8/8/8/B7/PPPPPPPP/RN1QKBNR", Illegal);
           ("rqrqkb1r/p1b4p/p6p/p6p/8/8/8/4K3", Illegal);
           ("rqr1kb1r/p1b4p/p6p/p6p/8/8/8/4K3", TBD);
+        ]
+
+    let test_pawn_structure_rule () =
+      List.iter
+        (fun (fen, legality) ->
+          let pos = Position.of_fen (fen ^ " - - 0 1") in
+          let state = Rules.(apply (State.init pos) [ pawn_structure_rule ]) in
+          legality_assertion state legality)
+        [
+          ("8/p7/8/P2p4/Pp1p4/kPpPp3/p1KBP3/NQ1B4 w", Illegal);
+          ("8/1kPN4/1P1PB3/K3B3/NP6/PPRP4/1P2R3/8 b", Illegal);
+          ("8/3R2K1/4kP1P/3R3P/3P2nP/4NBBP/7P/8 w", Illegal);
         ]
 
     let test_origins_rule () =
@@ -223,7 +254,9 @@ module Internal = struct
           assert (List.for_all destinies_match expected_destinies);
           assert (List.for_all not_found not_expected_destinies))
         [
-          ( "r2qk2r/pppppp2/1B6/4P3/4P3/1P2PB2/PRPPP3/1N1QK1NR w K -",
+          (* This is a great example of illegal! However, if we removed one
+             piece for white, it would become legal *)
+          ( "r2qk2r/pppppp2/1B6/8/4PP2/1P2PB2/PRPPP3/1N1QK1NR w Kk -",
             [ (a1, [ b2 ]); (c1, [ b6 ]); (c8, [ c8 ]) ],
             [ (f8, b3); (f8, d2) ] );
           ( "rnbqkbnr/pppppppp/8/8/8/P1PP4/1P2PPPP/1N1QKBNR w Kkq -",
@@ -534,6 +567,7 @@ module Internal = struct
         [
           test_case "static_rule" `Quick test_static_rule;
           test_case "material_rule" `Quick test_material_rule;
+          test_case "pawn_structure_rule" `Quick test_pawn_structure_rule;
           test_case "origins_rule" `Quick test_origins_rule;
           test_case "destinies_rule" `Quick test_destinies_rule;
           test_case "static_mobility_rule" `Quick test_static_mobility_rule;
