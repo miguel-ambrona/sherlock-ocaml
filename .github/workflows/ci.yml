@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends opam git ca-certificates curl z3
+          opam init -y --bare --disable-sandboxing
+          ./scripts/install_build_deps.sh
+
+      - name: Build
+        run: |
+          eval $(opam env)
+          dune build
+          ./scripts/check_opam_files.sh
+          dune build @fmt
+
+      - name: Test
+        run: |
+          eval $(opam env)
+          dune build @runtest
