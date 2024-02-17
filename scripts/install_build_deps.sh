@@ -10,29 +10,6 @@ if [ ! "$opam_version" = "$(opam --version | sed -e 's/\([0-9].[0-9]\).[0-9]/\1/
 script_dir="$(cd "$(dirname "$0")" && echo "$(pwd -P)/")"
 src_dir="$(dirname "$script_dir")"
 
-build_system_hash_file="$src_dir/.build_system_hash"
-
-compute_build_system_hash () {
-    cat $src_dir/dune-project $src_dir/*.opam $src_dir/.gitlab-ci.yml $0 | sha256sum | cut -d' ' -f1
-}
-
-# all the opam packages and this script, which contains the versions,
-# are hashed and stored in the build_system_hash_file.
-# If any of these files changes the CI cache is deleted.
-
-if [ ! "$(compute_build_system_hash)" = "$(cat $build_system_hash_file)" ]
-then
-    echo 'Inconsistent hash in .build_system_hash'
-    if [ "$1" = '--update' ]
-    then
-        compute_build_system_hash > $build_system_hash_file
-        env_changes='true'
-        echo 'updated hash. Nuke _opam?'
-        read UNUSED
-    else exit 1
-    fi
-fi
-
 if [ ! -d "$src_dir/_opam" ] ; then first_run="true" ; echo "first run" ; fi
 
 if [ "${CI_COMMIT_BRANCH#*opam}" != "$CI_COMMIT_BRANCH" ] ; then opam_branch="true" ; echo "opam branch" ; fi
@@ -48,6 +25,7 @@ if [ $first_run ] || [ $env_changes ] || [ $CLEAN_CACHE ] || [ $opam_branch ]; t
     opam update
     opam switch create "$src_dir" $ocaml_version --no-install
     opam install ocamlformat.0.25.1
+    opam install dune
     opam install . --deps-only --with-test
 
     echo 'You may want to: opam install odoc merlin'
