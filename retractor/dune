@@ -1,0 +1,5 @@
+(copy_files ../src/{*.ml})
+
+(executable
+ (name retractor)
+ (libraries chess alcotest))
