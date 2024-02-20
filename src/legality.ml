@@ -1055,7 +1055,7 @@ let dangerous_retractions pos =
   has_limited_retractions pos
   || has_limited_retractions (Position.flip_turn pos)
 
-let is_legal pos =
+let rec is_legal pos =
   let fen = Position.to_fen { pos with fullmove_number = 0 } in
   match fetch fen with
   | Some res -> res
@@ -1067,7 +1067,7 @@ let is_legal pos =
         else if dangerous_retractions pos then
           (* Format.printf "%s\n" @@ Position.to_fen pos; *)
           (* Format.print_flush (); *)
-          List.exists is_legal_aux (Retraction.retracted pos)
+          List.exists is_legal (Retraction.retracted pos)
         else
           (* Format.printf "%s true!\n" @@ Position.to_fen pos; *)
           (* Format.print_flush (); *)
