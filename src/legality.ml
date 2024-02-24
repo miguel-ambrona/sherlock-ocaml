@@ -543,6 +543,7 @@ module Rules = struct
         ColorMap.exists
           (fun _ usset -> not SquareSet.(is_empty (inter usset.definite to_rm)))
           state.missing
+        || SquareMap.exists (fun _ os -> SquareSet.is_empty os) state.origins
       in
       let illegal =
         match state.illegal with
