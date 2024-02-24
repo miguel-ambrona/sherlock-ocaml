@@ -107,9 +107,12 @@ let print_state (state : State.t) =
   SquareMap.iter
     (fun o ts ->
       if not (SquareSet.mem o state.static) then
-        Format.printf "%s -> {%s}\n" (Square.to_string o)
-          (String.concat ", "
-          @@ List.map Square.to_string (List.of_seq (SquareSet.to_seq ts))))
+        if SquareSet.cardinal ts > 10 then
+          Format.printf "%s -> {...}\n" (Square.to_string o)
+        else
+          Format.printf "%s -> {%s}\n" (Square.to_string o)
+            (String.concat ", "
+            @@ List.map Square.to_string (List.of_seq (SquareSet.to_seq ts))))
     state.destinies;
   Format.printf ">>\n";
   SquareMap.iter
