@@ -837,7 +837,8 @@ module Rules = struct
     if
       lower_bound_captures_by_c Black > 16 - nb_white
       || lower_bound_captures_by_c White > 16 - nb_black
-    then { state with illegal = Some "too many captures" }
+      || SquareMap.exists (fun _ (_, upper) -> upper < 0) state.captures
+    then { state with illegal = Some "too many captures needed" }
     else state
 
   (* The starting squares that do not appear in the origins of any piece on
