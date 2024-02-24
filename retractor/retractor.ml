@@ -68,7 +68,7 @@ let rec debug_apply ?(debug = false) state =
   in
   if State.equal state new_state then state else debug_apply new_state
 
-let is_illegal_with_reason pos =
+let rec is_illegal_with_reason ?(recursion_depth = 1) pos =
   let open Legality in
   let fen = Position.to_fen { pos with fullmove_number = 0 } in
   match fetch_reason fen with
@@ -82,8 +82,15 @@ let is_illegal_with_reason pos =
           match (debug_apply (State.init pos)).illegal with
           | Some reason -> Some reason
           | None ->
-              if dangerous_retractions pos then
-                if List.exists is_legal (Retraction.retracted pos) then None
+              if dangerous_retractions pos && recursion_depth > 0 then
+                if
+                  List.exists
+                    (fun p ->
+                      Option.is_none
+                      @@ is_illegal_with_reason
+                           ~recursion_depth:(recursion_depth - 1) p)
+                    (Retraction.retracted pos)
+                then None
                 else Some "unretractable"
               else None
       in
