@@ -1037,10 +1037,14 @@ module Rules = struct
     ]
 
   let rec apply state rules =
-    (* if Option.is_some state.illegal then state *)
-    (* else *)
-    let new_state = List.fold_left (fun s r -> r s) state rules in
-    if State.equal state new_state then state else apply new_state rules
+    if Option.is_some state.illegal then state
+    else
+      let new_state =
+        List.fold_left
+          (fun s rule -> if Option.is_some s.illegal then s else rule s)
+          state rules
+      in
+      if State.equal state new_state then state else apply new_state rules
 end
 
 let illegal_check pos = Position.(is_check (flip_turn pos))
