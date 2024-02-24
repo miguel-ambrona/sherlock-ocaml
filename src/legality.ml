@@ -343,6 +343,9 @@ module Helpers = struct
               j - i + min_nb_captures_for_pawn_structure (Array.to_list array)
         in
         min min_nb_captures_if_left min_nb_captures_if_right
+
+  let string_of_square_set set =
+    SquareSet.elements set |> List.map Square.to_string |> String.concat ", "
 end
 
 module Rules = struct
@@ -946,7 +949,15 @@ module Rules = struct
               (SquareSet.cardinal tomb_missing)
               (SquareSet.cardinal id_tombs)
           with
-          | -1 -> { state with illegal = Some "visiting tombs" }
+          | -1 ->
+              let reason =
+                Format.sprintf
+                  "not enough %s pieces could have possibly reached the set of \
+                   squares {%s} for being captured"
+                  (if Color.is_white c then "white" else "black")
+                  (Helpers.string_of_square_set id_tombs)
+              in
+              { state with illegal = Some reason }
           | 0 ->
               {
                 state with
