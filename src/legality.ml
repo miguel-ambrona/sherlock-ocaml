@@ -866,57 +866,68 @@ module Rules = struct
     let empty_tombs =
       Color.[ (White, []); (Black, []) ] |> List.to_seq |> ColorMap.of_seq
     in
-    (* Tombs due to exsiting pieces *)
-    let tombs =
-      SquareMap.fold
-        (fun s origins tombs ->
-          let p = Position.piece_at_exn s state.pos in
-          let pt = Piece.piece_type p in
-          let c = Piece.color p in
-          let p_tombs =
-            SquareSet.fold
-              (fun o ->
-                SquareSet.inter
-                  (Helpers.capturing_squares_in_path ~resulting_pt:(Some pt)
-                     ~state o s))
-              origins
-              (SquareSet.of_list Board.squares)
-            |> SquareSet.elements
-          in
-          ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
-        state.origins empty_tombs
-    in
-    (* Tombs due to potentially missing pieces *)
-    let tombs =
-      let definitely_missing =
-        SquareSet.union (ColorMap.find Color.White state.missing).definite
-          (ColorMap.find Color.Black state.missing).definite
+    if SquareMap.exists (fun _ os -> SquareSet.is_empty os) state.origins then
+      let s =
+        SquareMap.filter (fun _ os -> SquareSet.is_empty os) state.origins
+        |> SquareMap.choose |> fst
       in
-      SquareMap.fold
-        (fun o destinies tombs ->
-          let c =
-            if
-              Square.in_relative_rank 1 Color.White o
-              || Square.in_relative_rank 2 Color.White o
-            then Color.White
-            else Color.Black
-          in
-          if not (SquareSet.mem o definitely_missing) then tombs
-          else
+      let reason =
+        Format.sprintf "undetermined origin for the piece on %s"
+        @@ Square.to_string s
+      in
+      { state with illegal = Some reason }
+    else
+      (* Tombs due to exsiting pieces *)
+      let tombs =
+        SquareMap.fold
+          (fun s origins tombs ->
+            let p = Position.piece_at_exn s state.pos in
+            let pt = Piece.piece_type p in
+            let c = Piece.color p in
             let p_tombs =
               SquareSet.fold
-                (fun t ->
+                (fun o ->
                   SquareSet.inter
-                    (Helpers.capturing_squares_in_path ~resulting_pt:None ~state
-                       o t))
-                destinies
+                    (Helpers.capturing_squares_in_path ~resulting_pt:(Some pt)
+                       ~state o s))
+                origins
                 (SquareSet.of_list Board.squares)
               |> SquareSet.elements
             in
             ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
-        state.destinies tombs
-    in
-    { state with tombs }
+          state.origins empty_tombs
+      in
+      (* Tombs due to potentially missing pieces *)
+      let tombs =
+        let definitely_missing =
+          SquareSet.union (ColorMap.find Color.White state.missing).definite
+            (ColorMap.find Color.Black state.missing).definite
+        in
+        SquareMap.fold
+          (fun o destinies tombs ->
+            let c =
+              if
+                Square.in_relative_rank 1 Color.White o
+                || Square.in_relative_rank 2 Color.White o
+              then Color.White
+              else Color.Black
+            in
+            if not (SquareSet.mem o definitely_missing) then tombs
+            else
+              let p_tombs =
+                SquareSet.fold
+                  (fun t ->
+                    SquareSet.inter
+                      (Helpers.capturing_squares_in_path ~resulting_pt:None
+                         ~state o t))
+                  destinies
+                  (SquareSet.of_list Board.squares)
+                |> SquareSet.elements
+              in
+              ColorMap.add c (p_tombs @ ColorMap.find c tombs) tombs)
+          state.destinies tombs
+      in
+      { state with tombs }
 
   (* It should be possible to assign to every tomb a missing piece that can
      actually reach that tomb. If it is not possible, the position is illegal.
