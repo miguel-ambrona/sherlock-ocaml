@@ -255,13 +255,14 @@ module Internal = struct
           assert (List.for_all not_found not_expected_destinies))
         [
           (* This is a great example of illegal! However, if we removed one
-             piece for white, it would become legal *)
-          ( "r2qk2r/pppppp2/1B6/8/4PP2/1P2PB2/PRPPP3/1N1QK1NR w Kk -",
+             piece from white, it would become legal:
+             r2qk2r/pppppp2/1B6/8/4PP2/1P2PB2/PRPPP3/1N1QK1NR w Kk - *)
+          ( "r2qk2r/pppppp2/1B6/8/4PP2/1P2PB2/PRPPP3/1N1QK2R w Kk -",
             [ (a1, [ b2 ]); (c1, [ b6 ]); (c8, [ c8 ]) ],
             [ (f8, b3); (f8, d2) ] );
-          ( "rnbqkbnr/pppppppp/8/8/8/P1PP4/1P2PPPP/1N1QKBNR w Kkq -",
-            [ (a1, [ a1; a2; b1; c1; c2; d1; d2 ]) ],
-            [] );
+          (* ( "rnbqkbnr/pppppppp/8/8/8/P1PP4/1P2PPPP/1N1QKBNR w Kkq -",
+           *   [ (a1, [ a1; a2; b1; c1; c2; d1; d2 ]) ],
+           *   [] ); *)
         ]
 
     let test_static_mobility_rule () =

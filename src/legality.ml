@@ -343,6 +343,9 @@ module Helpers = struct
               j - i + min_nb_captures_for_pawn_structure (Array.to_list array)
         in
         min min_nb_captures_if_left min_nb_captures_if_right
+
+  let string_of_square_set set =
+    SquareSet.elements set |> List.map Square.to_string |> String.concat ", "
 end
 
 module Rules = struct
@@ -543,6 +546,7 @@ module Rules = struct
         ColorMap.exists
           (fun _ usset -> not SquareSet.(is_empty (inter usset.definite to_rm)))
           state.missing
+        || SquareMap.exists (fun _ os -> SquareSet.is_empty os) state.origins
       in
       let illegal =
         match state.illegal with
@@ -567,7 +571,7 @@ module Rules = struct
 
   (* If the piece currently on square s has only one candidate origin o,
      then we can claim that the destiny of o is s.
-     If s is the origin square of a missing piece, its candidate endings are,
+     If s is the origin square of a missing piece, its candidate destinies are,
      a priori, all the squares that this piece could have reached. *)
   let destinies_rule state =
     (* Destinies due to single candidate origin *)
@@ -800,6 +804,8 @@ module Rules = struct
     in
     let nb_white = List.length (Position.white_pieces state.pos) in
     let nb_black = List.length (Position.black_pieces state.pos) in
+    (* white_cnt (resp. black_cnt) is a lower bound on the total number
+       of captures performed by the white (resp. black) pieces *)
     let white_cnt, black_cnt =
       SquareMap.fold
         (fun o (lower, _) (white_cnt, black_cnt) ->
@@ -836,7 +842,8 @@ module Rules = struct
     if
       lower_bound_captures_by_c Black > 16 - nb_white
       || lower_bound_captures_by_c White > 16 - nb_black
-    then { state with illegal = Some "too many captures" }
+      || SquareMap.exists (fun _ (_, upper) -> upper < 0) state.captures
+    then { state with illegal = Some "too many captures needed" }
     else state
 
   (* The starting squares that do not appear in the origins of any piece on
@@ -942,7 +949,15 @@ module Rules = struct
               (SquareSet.cardinal tomb_missing)
               (SquareSet.cardinal id_tombs)
           with
-          | -1 -> { state with illegal = Some "visiting tombs" }
+          | -1 ->
+              let reason =
+                Format.sprintf
+                  "not enough %s pieces could have possibly reached the set of \
+                   squares {%s} for being captured"
+                  (if Color.is_white c then "white" else "black")
+                  (Helpers.string_of_square_set id_tombs)
+              in
+              { state with illegal = Some reason }
           | 0 ->
               {
                 state with
@@ -1022,10 +1037,14 @@ module Rules = struct
     ]
 
   let rec apply state rules =
-    (* if Option.is_some state.illegal then state *)
-    (* else *)
-    let new_state = List.fold_left (fun s r -> r s) state rules in
-    if State.equal state new_state then state else apply new_state rules
+    if Option.is_some state.illegal then state
+    else
+      let new_state =
+        List.fold_left
+          (fun s rule -> if Option.is_some s.illegal then s else rule s)
+          state rules
+      in
+      if State.equal state new_state then state else apply new_state rules
 end
 
 let illegal_check pos = Position.(is_check (flip_turn pos))
@@ -1055,7 +1074,7 @@ let dangerous_retractions pos =
   has_limited_retractions pos
   || has_limited_retractions (Position.flip_turn pos)
 
-let is_legal pos =
+let rec is_legal pos =
   let fen = Position.to_fen { pos with fullmove_number = 0 } in
   match fetch fen with
   | Some res -> res
@@ -1067,7 +1086,7 @@ let is_legal pos =
         else if dangerous_retractions pos then
           (* Format.printf "%s\n" @@ Position.to_fen pos; *)
           (* Format.print_flush (); *)
-          List.exists is_legal_aux (Retraction.retracted pos)
+          List.exists is_legal (Retraction.retracted pos)
         else
           (* Format.printf "%s true!\n" @@ Position.to_fen pos; *)
           (* Format.print_flush (); *)
