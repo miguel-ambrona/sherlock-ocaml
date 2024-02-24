@@ -568,7 +568,7 @@ module Rules = struct
 
   (* If the piece currently on square s has only one candidate origin o,
      then we can claim that the destiny of o is s.
-     If s is the origin square of a missing piece, its candidate endings are,
+     If s is the origin square of a missing piece, its candidate destinies are,
      a priori, all the squares that this piece could have reached. *)
   let destinies_rule state =
     (* Destinies due to single candidate origin *)
@@ -801,6 +801,8 @@ module Rules = struct
     in
     let nb_white = List.length (Position.white_pieces state.pos) in
     let nb_black = List.length (Position.black_pieces state.pos) in
+    (* white_cnt (resp. black_cnt) is a lower bound on the total number
+       of captures performed by the white (resp. black) pieces *)
     let white_cnt, black_cnt =
       SquareMap.fold
         (fun o (lower, _) (white_cnt, black_cnt) ->
