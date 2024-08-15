@@ -5,6 +5,11 @@
 
 # Sherlock
 
+> [!IMPORTANT]
+> Sherlock (in Ocaml) is no longer under developement. Please, consider
+> using the [Rust version of Sherlock](https://github.com/miguel-ambrona/sherlock)
+> instead.
+
 A chess library written in OCaml, oriented to creating and solving chess
 compositions with especial emphasis on **retrograde analysis**.
 
